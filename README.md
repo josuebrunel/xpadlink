@@ -31,6 +31,9 @@ Open UDP port 9777 in your firewall if you have one (`sudo ufw allow 9777/udp`).
 
 Flags: `-listen :9777`, `-token <secret>`, `-max 4`, `-timeout 3s`, `-dry` (log instead of using uinput), `-log-level debug|info|warn|error` (structured `slog` output; `-dry` defaults to debug).
 
+Prebuilt binaries for Linux, macOS and Windows are attached to each GitHub release. Only Linux can
+create the virtual pad (uinput); on macOS and Windows the daemon runs with `-dry` for development.
+
 ### Test without the phone
 
 ```sh
