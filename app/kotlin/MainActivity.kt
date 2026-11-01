@@ -1,6 +1,8 @@
 package com.example.xpadlink
 
+import android.hardware.input.InputManager
 import android.os.Bundle
+import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -19,6 +21,11 @@ import kotlin.math.max
  * Button bits match server/proto/proto.go and app/lib/protocol.dart.
  */
 class MainActivity : FlutterActivity() {
+    private companion object {
+        const val TAG = "xpadlink"
+        const val LOG_EVERY_MS = 2000L
+    }
+
     private var sink: EventChannel.EventSink? = null
 
     private var faceBits = 0
@@ -34,9 +41,54 @@ class MainActivity : FlutterActivity() {
     private var rtKey = false
     private var deviceName = "gamepad"
 
+    private val seenDevices = HashSet<Int>()
+    private val lastLog = HashMap<String, Long>()
+
+    private val deviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(id: Int) = logDevice("added", InputDevice.getDevice(id))
+        override fun onInputDeviceRemoved(id: Int) {
+            Log.i(TAG, "input device removed id=$id")
+            seenDevices.remove(id)
+        }
+        override fun onInputDeviceChanged(id: Int) = logDevice("changed", InputDevice.getDevice(id))
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        Log.i(TAG, "MainActivity created")
+        val im = getSystemService(INPUT_SERVICE) as InputManager
+        im.registerInputDeviceListener(deviceListener, null)
+        for (id in InputDevice.getDeviceIds()) logDevice("present", InputDevice.getDevice(id))
+    }
+
+    override fun onDestroy() {
+        (getSystemService(INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(deviceListener)
+        Log.i(TAG, "MainActivity destroyed")
+        super.onDestroy()
+    }
+
+    /** Logs a device once per change with the details needed to debug mappings. */
+    private fun logDevice(event: String, d: InputDevice?) {
+        if (d == null) return
+        val axes = d.motionRanges.joinToString(",") { MotionEvent.axisToString(it.axis).removePrefix("AXIS_") }
+        Log.i(
+            TAG,
+            "input device $event id=${d.id} name='${d.name}' vendor=${d.vendorId} product=${d.productId} " +
+                "sources=0x${Integer.toHexString(d.sources)} pad=${isPad(d.sources)} axes=[$axes]"
+        )
+    }
+
+    /** Rate-limited log so a held button or stick doesn't flood logcat. */
+    private fun logLimited(key: String, msg: String) {
+        val now = System.currentTimeMillis()
+        if (now - (lastLog[key] ?: 0L) < LOG_EVERY_MS) return
+        lastLog[key] = now
+        Log.w(TAG, msg)
+    }
+
+    private fun noteDevice(e: android.view.InputEvent) {
+        if (seenDevices.add(e.deviceId)) logDevice("first event", e.device)
     }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -44,10 +96,12 @@ class MainActivity : FlutterActivity() {
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/gamepad")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(args: Any?, events: EventChannel.EventSink?) {
+                    Log.i(TAG, "gamepad channel: Dart listening")
                     sink = events
                 }
 
                 override fun onCancel(args: Any?) {
+                    Log.i(TAG, "gamepad channel: Dart stopped listening")
                     sink = null
                 }
             })
@@ -89,6 +143,7 @@ class MainActivity : FlutterActivity() {
         }
         val down = e.action == KeyEvent.ACTION_DOWN
         val pad = isPad(e.source)
+        noteDevice(e)
         val face = faceBit(e.keyCode)
         val dpad = if (pad) dpadBit(e.keyCode) else 0
 
@@ -97,7 +152,15 @@ class MainActivity : FlutterActivity() {
             dpad != 0 -> keyDpad = setBit(keyDpad, dpad, down)
             pad && e.keyCode == KeyEvent.KEYCODE_BUTTON_L2 -> ltKey = down
             pad && e.keyCode == KeyEvent.KEYCODE_BUTTON_R2 -> rtKey = down
-            else -> return super.dispatchKeyEvent(e)
+            else -> {
+                if (pad) {
+                    logLimited(
+                        "key${e.keyCode}",
+                        "unmapped pad key ${KeyEvent.keyCodeToString(e.keyCode)} from '${e.device?.name}'"
+                    )
+                }
+                return super.dispatchKeyEvent(e)
+            }
         }
         if (e.repeatCount > 0) return true
         e.device?.name?.let { deviceName = it }
@@ -108,8 +171,15 @@ class MainActivity : FlutterActivity() {
     override fun dispatchGenericMotionEvent(e: MotionEvent): Boolean {
         val joystick = (e.source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
         if (!joystick || e.action != MotionEvent.ACTION_MOVE) {
+            if (e.source != 0 && e.action != MotionEvent.ACTION_HOVER_MOVE) {
+                logLimited(
+                    "motion${e.source}-${e.action}",
+                    "ignored motion event source=0x${Integer.toHexString(e.source)} action=${e.action}"
+                )
+            }
             return super.dispatchGenericMotionEvent(e)
         }
+        noteDevice(e)
         lx = deadzone(e.getAxisValue(MotionEvent.AXIS_X))
         ly = deadzone(e.getAxisValue(MotionEvent.AXIS_Y))
         // Xbox and PS4 pads on Android: right stick is Z/RZ, triggers are LTRIGGER/RTRIGGER.
@@ -138,7 +208,11 @@ class MainActivity : FlutterActivity() {
         max((axis.coerceIn(0f, 1f) * 255f).toInt(), if (key) 255 else 0)
 
     private fun emit() {
-        val s = sink ?: return
+        val s = sink
+        if (s == null) {
+            logLimited("nosink", "pad event dropped: Dart is not listening on the gamepad channel")
+            return
+        }
         s.success(
             mapOf(
                 "name" to deviceName,

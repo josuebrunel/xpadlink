@@ -4,6 +4,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 
 flutter create --org com.example --project-name xpadlink --platforms android xpadlink_app
+rm -f xpadlink_app/test/widget_test.dart  # references the default MyApp
 cp lib/*.dart xpadlink_app/lib/
 cp kotlin/MainActivity.kt xpadlink_app/android/app/src/main/kotlin/com/example/xpadlink/MainActivity.kt
 
