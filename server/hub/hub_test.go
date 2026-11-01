@@ -21,6 +21,7 @@ func newTestHub(max int) (*Hub, *[]*fakePad) {
 	var pads []*fakePad
 	h := New(Config{
 		Token: "secret", MaxPads: max, Timeout: time.Second,
+		Port: 9777, Hostname: "testhost",
 		New: vpad.Factory(func(string) (vpad.Pad, error) {
 			p := &fakePad{}
 			pads = append(pads, p)
@@ -104,5 +105,31 @@ func TestReap(t *testing.T) {
 	h.Reap(t0.Add(2 * time.Second))
 	if h.Len() != 0 || !(*pads)[0].closed {
 		t.Fatal("expected pad closed after timeout")
+	}
+}
+
+func TestDiscoverAnnouncesWithoutToken(t *testing.T) {
+	h, _ := newTestHub(1)
+	r := h.Handle(proto.MarshalDiscover(), addrA, t0)
+	port, host, err := proto.ParseAnnounce(r)
+	if err != nil || port != 9777 || host != "testhost" {
+		t.Fatalf("announce: %v %d %q", err, port, host)
+	}
+	if h.Len() != 0 {
+		t.Fatal("discover must not create a session")
+	}
+}
+
+func TestDiscoverRateLimit(t *testing.T) {
+	h, _ := newTestHub(1)
+	h.Handle(proto.MarshalDiscover(), addrA, t0)
+	if r := h.Handle(proto.MarshalDiscover(), addrA, t0.Add(50*time.Millisecond)); r != nil {
+		t.Fatal("probe inside the gap must be dropped")
+	}
+	if r := h.Handle(proto.MarshalDiscover(), addrB, t0.Add(50*time.Millisecond)); r == nil {
+		t.Fatal("other sources are limited independently")
+	}
+	if r := h.Handle(proto.MarshalDiscover(), addrA, t0.Add(300*time.Millisecond)); r == nil {
+		t.Fatal("probe after the gap must be answered")
 	}
 }

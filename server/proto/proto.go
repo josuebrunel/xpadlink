@@ -16,6 +16,8 @@ const (
 	TypeNeedHello byte = 3 // server -> client: magic, 3 (state from unknown address)
 	TypeState     byte = 4 // client -> server: see State.Marshal
 	TypeBye       byte = 5 // client -> server: magic, 5
+	TypeDiscover  byte = 6 // client -> server (broadcast): magic, 6
+	TypeAnnounce  byte = 7 // server -> client: magic, 7, port u16, hostname
 
 	StateLen = 18
 )
@@ -95,6 +97,23 @@ func ParseHello(b []byte) (token, name string, err error) {
 		return "", "", ErrBadPacket
 	}
 	return string(tok), string(nm), nil
+}
+
+// MarshalDiscover builds the broadcast probe clients send to find servers.
+func MarshalDiscover() []byte { return []byte{Magic, TypeDiscover} }
+
+// MarshalAnnounce builds the reply to a discover probe. It never carries the token.
+func MarshalAnnounce(port uint16, hostname string) []byte {
+	b := []byte{Magic, TypeAnnounce, 0, 0}
+	binary.LittleEndian.PutUint16(b[2:], port)
+	return append(b, hostname...)
+}
+
+func ParseAnnounce(b []byte) (port uint16, hostname string, err error) {
+	if len(b) < 4 || b[0] != Magic || b[1] != TypeAnnounce {
+		return 0, "", ErrBadPacket
+	}
+	return binary.LittleEndian.Uint16(b[2:]), string(b[4:]), nil
 }
 
 // Newer reports whether sequence a is newer than b, handling uint16 wraparound.

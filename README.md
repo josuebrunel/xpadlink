@@ -51,7 +51,9 @@ cd app
 cd xpadlink_app && flutter run
 ```
 
-Enter `<server-ip>:9777` and the token printed by `xpadlinkd`.
+The app scans the local subnet on start (UDP broadcast) and lists nearby servers; tap one, then enter
+the token printed by `xpadlinkd`. Discovery only works within one subnet, so you can also type
+`<server-ip>:9777` and save servers for later.
 
 - Touch mode: on-screen sticks, D-pad, ABXY, LB/RB, LT/RT (digital), Back/Guide/Start.
 - Physical pad: plug in or pair a controller, press a button. `MainActivity.kt` intercepts the
@@ -69,6 +71,8 @@ All little endian. Every packet starts with magic `0xA7`, then a type byte.
 | 3 need-hello | S to C | none, sent when state arrives from an unknown address |
 | 4 state | C to S | seq u16, buttons u32, lx ly rx ry i16, lt rt u8 (18 bytes total) |
 | 5 bye | C to S | none |
+| 6 discover | C to S | none, broadcast to `255.255.255.255:9777` |
+| 7 announce | S to C | port u16, hostname (no token) |
 
 State is sent whenever it changes and at least every 100 ms, so a dropped packet heals fast.
 Stale or duplicate sequence numbers are discarded. A client silent for 3 s loses its device.

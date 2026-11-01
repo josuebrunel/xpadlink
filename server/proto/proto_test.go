@@ -35,3 +35,13 @@ func TestNewer(t *testing.T) {
 		t.Fatal("Newer is wrong")
 	}
 }
+
+func TestAnnounceRoundTrip(t *testing.T) {
+	port, host, err := ParseAnnounce(MarshalAnnounce(9777, "my-pc"))
+	if err != nil || port != 9777 || host != "my-pc" {
+		t.Fatalf("%d %q %v", port, host, err)
+	}
+	if _, _, err := ParseAnnounce([]byte{Magic, TypeAnnounce, 1}); err == nil {
+		t.Fatal("short announce must fail")
+	}
+}

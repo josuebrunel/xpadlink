@@ -20,7 +20,11 @@ type Config struct {
 	MaxPads int           // max simultaneous clients
 	Timeout time.Duration // drop a client after this much silence
 	New     vpad.Factory
-	Log     *slog.Logger // nil discards
+
+	// Announced to clients that broadcast a discover probe.
+	Port     uint16
+	Hostname string
+	Log      *slog.Logger // nil discards
 }
 
 type session struct {
@@ -32,9 +36,14 @@ type session struct {
 	haveSeq  bool
 }
 
+// discoverMinGap limits announce replies per source address, so the server
+// can't be used to amplify traffic at a spoofed address.
+const discoverMinGap = 200 * time.Millisecond
+
 type Hub struct {
-	cfg      Config
-	sessions map[netip.AddrPort]*session
+	cfg          Config
+	sessions     map[netip.AddrPort]*session
+	lastDiscover map[netip.Addr]time.Time
 }
 
 func New(cfg Config) *Hub {
@@ -47,7 +56,12 @@ func New(cfg Config) *Hub {
 	if cfg.Timeout <= 0 {
 		cfg.Timeout = 3 * time.Second
 	}
-	return &Hub{cfg: cfg, sessions: map[netip.AddrPort]*session{}}
+	cfg.Hostname = clean(cfg.Hostname)
+	return &Hub{
+		cfg:          cfg,
+		sessions:     map[netip.AddrPort]*session{},
+		lastDiscover: map[netip.Addr]time.Time{},
+	}
 }
 
 // Handle processes one datagram and returns an optional reply for the sender.
@@ -77,8 +91,21 @@ func (h *Hub) Handle(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 		}
 	case proto.TypeBye:
 		h.drop(from, "bye")
+	case proto.TypeDiscover:
+		return h.discover(from, now)
 	}
 	return nil
+}
+
+func (h *Hub) discover(from netip.AddrPort, now time.Time) []byte {
+	ip := from.Addr().Unmap()
+	if last, ok := h.lastDiscover[ip]; ok && now.Sub(last) < discoverMinGap {
+		h.cfg.Log.Debug("discover rate limited", "from", from)
+		return nil
+	}
+	h.lastDiscover[ip] = now
+	h.cfg.Log.Info("discover probe answered", "from", from)
+	return proto.MarshalAnnounce(h.cfg.Port, h.cfg.Hostname)
 }
 
 func (h *Hub) hello(pkt []byte, from netip.AddrPort, now time.Time) []byte {
@@ -117,6 +144,11 @@ func (h *Hub) Reap(now time.Time) {
 	for addr, s := range h.sessions {
 		if now.Sub(s.lastSeen) > h.cfg.Timeout {
 			h.drop(addr, "timeout")
+		}
+	}
+	for ip, t := range h.lastDiscover {
+		if now.Sub(t) > time.Minute {
+			delete(h.lastDiscover, ip)
 		}
 	}
 }

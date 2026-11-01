@@ -65,9 +65,11 @@ func main() {
 	log.Info("listening", "addr", conn.LocalAddr().String(), "token", *token, "dry", *dry)
 	logLANAddrs(addr.Port)
 
+	host, _ := os.Hostname()
 	h := hub.New(hub.Config{
 		Token: *token, MaxPads: *maxPads, Timeout: *timeout,
 		New: factory, Log: log,
+		Port: uint16(addr.Port), Hostname: host,
 	})
 	defer h.Close()
 
