@@ -32,64 +32,33 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
-  build:
-    name: build (${{ matrix.goos }}/${{ matrix.goarch }})
+  goreleaser:
+    name: goreleaser
     needs: test
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - {goos: linux, goarch: amd64}
-          - {goos: linux, goarch: arm64}
-          - {goos: darwin, goarch: amd64}
-          - {goos: darwin, goarch: arm64}
-          - {goos: windows, goarch: amd64}
-          - {goos: windows, goarch: arm64}
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache: false
-      - name: build and package
-        env:
-          GOOS: ${{ matrix.goos }}
-          GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: "0"
-        run: |
-          name="xpadlinkd-${{ matrix.goos }}-${{ matrix.goarch }}"
-          ext=""; [ "$GOOS" = windows ] && ext=".exe"
-          mkdir -p "dist/$name"
-          (cd server && go build -trimpath -ldflags "-s -w" -o "../dist/$name/xpadlinkd$ext" ./cmd/xpadlinkd)
-          cp README.md "dist/$name/"
-          [ "$GOOS" = linux ] && cp 99-xpadlink-uinput.rules "dist/$name/"
-          cd dist
-          if [ "$GOOS" = windows ]; then zip -qr "$name.zip" "$name"; else tar czf "$name.tar.gz" "$name"; fi
-      - uses: actions/upload-artifact@v4
-        with:
-          name: xpadlinkd-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: |
-            dist/*.zip
-            dist/*.tar.gz
-          if-no-files-found: error
-
-  release:
-    name: release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: build
     runs-on: ubuntu-latest
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/checkout@v4
         with:
-          path: dist
-          merge-multiple: true
-      - name: checksums
-        working-directory: dist
-        run: sha256sum * > SHA256SUMS
-      - name: publish release
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      # Tags publish a release; everything else builds a snapshot to validate the config.
+      - uses: goreleaser/goreleaser-action@v6
+        with:
+          version: "~> v2"
+          args: ${{ startsWith(github.ref, 'refs/tags/v') && 'release --clean' || 'release --snapshot --clean' }}
         env:
-          GH_TOKEN: ${{ github.token }}
-        run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --generate-notes
+          GITHUB_TOKEN: ${{ github.token }}
+      - uses: actions/upload-artifact@v4
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        with:
+          name: xpadlinkd-snapshot
+          path: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS
+          if-no-files-found: error

@@ -112,7 +112,7 @@ make dry        # run the server without uinput
 ```
 
 - CI (`.github/workflows/ci.yml`): tests on Linux, macOS and Windows, builds `xpadlinkd` for
-  linux, darwin and windows (amd64, arm64). Pushing a `v*` tag publishes a release with the archives.
+  linux, darwin and windows (amd64, arm64) with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). Pushing a `v*` tag publishes a release with the archives and checksums.
 - Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 - Layout: `server/` Go daemon (`proto`, `hub`, `vpad`, `cmd/`), `app/` Flutter code, copied into a generated project by `app/setup.sh`.
 

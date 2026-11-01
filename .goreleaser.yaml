@@ -1,0 +1,36 @@
+version: 2
+project_name: xpadlink
+
+builds:
+  - id: xpadlinkd
+    dir: server
+    main: ./cmd/xpadlinkd
+    binary: xpadlinkd
+    env:
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags: [-trimpath]
+    ldflags: [-s -w]
+
+archives:
+  - id: xpadlinkd
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "xpadlinkd-{{ .Os }}-{{ .Arch }}"
+    files:
+      - README.md
+      - src: 99-xpadlink-uinput.rules
+        strip_parent: true
+
+checksum:
+  name_template: SHA256SUMS
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - "^Merge"
+      - "^README"
