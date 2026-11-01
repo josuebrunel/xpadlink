@@ -134,3 +134,30 @@ func TestDiscoverRateLimit(t *testing.T) {
 		t.Fatal("probe after the gap must be answered")
 	}
 }
+
+type rumblePad struct {
+	fakePad
+	fn func(strong, weak, ms uint16)
+}
+
+func (r *rumblePad) OnRumble(fn func(strong, weak, ms uint16)) { r.fn = fn }
+
+func TestRumbleIsSentToTheClient(t *testing.T) {
+	var pad *rumblePad
+	var sentTo netip.AddrPort
+	var sent []byte
+	h := New(Config{
+		Token: "secret", MaxPads: 1, Timeout: time.Second,
+		New:  vpad.Factory(func(string) (vpad.Pad, error) { pad = &rumblePad{}; return pad, nil }),
+		Send: func(to netip.AddrPort, b []byte) { sentTo, sent = to, b },
+	})
+	h.Handle(proto.MarshalHello("secret", "p"), addrA, t0)
+	if pad == nil || pad.fn == nil {
+		t.Fatal("hub must register a rumble handler")
+	}
+	pad.fn(1000, 2000, 300)
+	st, wk, ms, err := proto.ParseRumble(sent)
+	if err != nil || sentTo != addrA || st != 1000 || wk != 2000 || ms != 300 {
+		t.Fatalf("sent %v to %v: %d %d %d %v", sent, sentTo, st, wk, ms, err)
+	}
+}

@@ -1,5 +1,6 @@
 // xpadsim is a fake client for testing the server without a phone.
-// It sweeps the left stick in a circle and taps A once a second.
+// It sweeps the left stick in a circle, taps A once a second and prints any
+// rumble the server forwards.
 package main
 
 import (
@@ -32,6 +33,21 @@ func main() {
 		log.Fatalf("no ack from server (wrong token or server down): %v", err)
 	}
 	log.Printf("joined as player %d", buf[2]+1)
+	conn.SetReadDeadline(time.Time{})
+
+	// Show vibration requests, so a game's rumble can be checked without a phone.
+	go func() {
+		b := make([]byte, 64)
+		for {
+			n, err := conn.Read(b)
+			if err != nil {
+				return
+			}
+			if strong, weak, ms, err := proto.ParseRumble(b[:n]); err == nil {
+				log.Printf("rumble: strong=%d weak=%d ms=%d", strong, weak, ms)
+			}
+		}
+	}()
 
 	start := time.Now()
 	var seq uint16

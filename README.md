@@ -10,6 +10,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 - Shows up as an Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
 - Up to 4 phones at once, one virtual pad each.
+- Vibration: a game's rumble is forwarded to the phone, or to a controller with motors.
 - The app finds the server on your Wi-Fi by itself.
 
 **Contents:** [Quick start](#quick-start) · [Run in the background](#run-in-the-background) · [Flags](#flags) · [Troubleshooting](#troubleshooting) · [Development](#development) · [Known gaps](#known-gaps)
@@ -132,6 +133,9 @@ make test       # Go tests
 make dry        # run the server without uinput
 ```
 
+Check vibration without a game: connect the phone, then run `go run ./cmd/xpadrumble` in `server/`.
+It plays a rumble effect on the virtual pad, the way a game would.
+
 - CI (`.github/workflows/ci.yml`): tests on Linux, macOS and Windows, builds `xpadlinkd` for
   linux, darwin and windows (amd64, arm64) with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). Pushing a `v*` tag publishes a release with the archives and checksums.
 - Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
@@ -140,7 +144,7 @@ make dry        # run the server without uinput
 ## Known gaps
 
 - Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
-- No rumble, no gyro.
+- No gyro.
 - LAN only, no encryption. The token only stops other people on the network from injecting input.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 

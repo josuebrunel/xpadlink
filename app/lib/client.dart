@@ -15,6 +15,9 @@ class PadClient extends ChangeNotifier {
 
   bool connected = false;
 
+  /// Called when a game asks the controller to vibrate.
+  void Function(int strong, int weak, int ms)? onRumble;
+
   /// Set while the server refuses us (wrong token, server full); cleared on ack.
   String? rejected;
   int slot = -1;
@@ -160,6 +163,9 @@ class PadClient extends ChangeNotifier {
           rejected = why;
           if (!_disposed) notifyListeners();
         }
+      } else if (b[1] == kRumble) {
+        final r = parseRumble(b);
+        if (r != null) onRumble?.call(r.strong, r.weak, r.ms);
       } else {
         _log.d('ignored packet type ${b[1]} len ${b.length}');
       }

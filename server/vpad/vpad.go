@@ -43,3 +43,6 @@ func (p *logPad) Close() error {
 	slog.Info("dry pad destroyed", "name", p.name)
 	return nil
 }
+
+// OnRumble is a no-op: a dry-run pad never receives force feedback.
+func (p *logPad) OnRumble(func(strong, weak, ms uint16)) {}

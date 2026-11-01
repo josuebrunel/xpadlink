@@ -19,6 +19,9 @@ const (
 	TypeDiscover  byte = 6 // client -> server (broadcast): magic, 6
 	TypeAnnounce  byte = 7 // server -> client: magic, 7, port u16, hostname
 	TypeReject    byte = 8 // server -> client: magic, 8, reason
+	TypeRumble    byte = 9 // server -> client: magic, 9, strong u16, weak u16, ms u16
+
+	RumbleLen = 8
 
 	RejectBadToken byte = 1
 	RejectFull     byte = 2
@@ -118,6 +121,23 @@ func ParseAnnounce(b []byte) (port uint16, hostname string, err error) {
 		return 0, "", ErrBadPacket
 	}
 	return binary.LittleEndian.Uint16(b[2:]), string(b[4:]), nil
+}
+
+// MarshalRumble builds a vibration request. ms 0 means "until the next rumble
+// packet"; strong and weak both 0 means stop.
+func MarshalRumble(strong, weak, ms uint16) []byte {
+	b := []byte{Magic, TypeRumble, 0, 0, 0, 0, 0, 0}
+	binary.LittleEndian.PutUint16(b[2:], strong)
+	binary.LittleEndian.PutUint16(b[4:], weak)
+	binary.LittleEndian.PutUint16(b[6:], ms)
+	return b
+}
+
+func ParseRumble(b []byte) (strong, weak, ms uint16, err error) {
+	if len(b) != RumbleLen || b[0] != Magic || b[1] != TypeRumble {
+		return 0, 0, 0, ErrBadPacket
+	}
+	return binary.LittleEndian.Uint16(b[2:]), binary.LittleEndian.Uint16(b[4:]), binary.LittleEndian.Uint16(b[6:]), nil
 }
 
 // Newer reports whether sequence a is newer than b, handling uint16 wraparound.

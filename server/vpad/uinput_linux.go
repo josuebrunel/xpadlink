@@ -3,6 +3,7 @@ package vpad
 import (
 	"encoding/binary"
 	"fmt"
+	"os"
 	"syscall"
 	"unsafe"
 
@@ -16,10 +17,22 @@ const (
 	uiSetEvBit   = 0x40045564
 	uiSetKeyBit  = 0x40045565
 	uiSetAbsBit  = 0x40045567
+	uiSetFFBit   = 0x4004556b
 
 	evSyn = 0x00
 	evKey = 0x01
 	evAbs = 0x03
+	evFF  = 0x15
+
+	// uinput event type and codes used for force feedback requests.
+	evUinput   = 0x0101
+	uiFFUpload = 1
+	uiFFErase  = 2
+
+	ffRumble = 0x50
+	ffGain   = 0x60
+
+	ffEffectsMax = 16
 
 	absX, absY, absZ        = 0x00, 0x01, 0x02
 	absRX, absRY, absRZ     = 0x03, 0x04, 0x05
@@ -53,36 +66,93 @@ type inputEvent struct {
 	Value int32
 }
 
+// kffEffect and ffUpload mirror struct ff_effect and struct uinput_ff_upload
+// from linux/input.h and linux/uinput.h. The union is sized by its largest
+// member (ff_periodic_effect), so the layout follows the host pointer size.
+type kffEffect struct {
+	Type            uint16
+	ID              int16
+	Direction       uint16
+	TriggerButton   uint16
+	TriggerInterval uint16
+	ReplayLength    uint16
+	ReplayDelay     uint16
+	U               struct {
+		Waveform   uint16 // for FF_RUMBLE: strong_magnitude
+		Period     uint16 // for FF_RUMBLE: weak_magnitude
+		Magnitude  int16
+		Offset     int16
+		Phase      uint16
+		Envelope   [4]uint16
+		CustomLen  uint32
+		CustomData uintptr
+	}
+}
+
+type ffUpload struct {
+	RequestID uint32
+	Retval    int32
+	Effect    kffEffect
+	Old       kffEffect
+}
+
+type ffErase struct {
+	RequestID uint32
+	Retval    int32
+	EffectID  uint32
+}
+
+// ioc builds an ioctl number (linux/ioctl.h): dir 1 = write, 3 = read+write.
+func ioc(dir, nr, size uintptr) uintptr { return dir<<30 | size<<16 | 'U'<<8 | nr }
+
+var (
+	uiBeginFFUpload = ioc(3, 200, unsafe.Sizeof(ffUpload{}))
+	uiEndFFUpload   = ioc(1, 201, unsafe.Sizeof(ffUpload{}))
+	uiBeginFFErase  = ioc(3, 202, unsafe.Sizeof(ffErase{}))
+	uiEndFFErase    = ioc(1, 203, unsafe.Sizeof(ffErase{}))
+)
+
 type uinputPad struct {
-	fd    int
+	f     *os.File
+	rc    syscall.RawConn
 	last  proto.State
 	fresh bool
+	ff    *ffTracker
 }
 
 // NewUinput is the real Factory. It needs write access to /dev/uinput.
 func NewUinput(name string) (Pad, error) {
-	fd, err := syscall.Open("/dev/uinput", syscall.O_WRONLY|syscall.O_NONBLOCK, 0)
+	// Read and write: games send force feedback requests back on this descriptor.
+	f, err := os.OpenFile("/dev/uinput", os.O_RDWR|syscall.O_NONBLOCK, 0)
 	if err != nil {
 		return nil, fmt.Errorf("open /dev/uinput: %w (see README: modprobe uinput + udev rule)", err)
 	}
-	p := &uinputPad{fd: fd, fresh: true}
+	rc, err := f.SyscallConn()
+	if err != nil {
+		f.Close()
+		return nil, err
+	}
+	p := &uinputPad{f: f, rc: rc, fresh: true, ff: newFFTracker()}
 	fail := func(what string, err error) (Pad, error) {
-		syscall.Close(fd)
+		f.Close()
 		return nil, fmt.Errorf("%s: %w", what, err)
 	}
 
-	for _, t := range []int{evKey, evAbs, evSyn} {
-		if err := ioctl(fd, uiSetEvBit, uintptr(t)); err != nil {
+	for _, t := range []int{evKey, evAbs, evFF, evSyn} {
+		if err := p.ioctl(uiSetEvBit, uintptr(t)); err != nil {
 			return fail("UI_SET_EVBIT", err)
 		}
 	}
+	if err := p.ioctl(uiSetFFBit, ffRumble); err != nil {
+		return fail("UI_SET_FFBIT", err)
+	}
 	for _, b := range buttonMap {
-		if err := ioctl(fd, uiSetKeyBit, uintptr(b.code)); err != nil {
+		if err := p.ioctl(uiSetKeyBit, uintptr(b.code)); err != nil {
 			return fail("UI_SET_KEYBIT", err)
 		}
 	}
 	for _, a := range []int{absX, absY, absZ, absRX, absRY, absRZ, absHat0X, absHat0Y} {
-		if err := ioctl(fd, uiSetAbsBit, uintptr(a)); err != nil {
+		if err := p.ioctl(uiSetAbsBit, uintptr(a)); err != nil {
 			return fail("UI_SET_ABSBIT", err)
 		}
 	}
@@ -99,6 +169,7 @@ func NewUinput(name string) (Pad, error) {
 	)
 	dev := make([]byte, size)
 	copy(dev[:79], name)
+	binary.LittleEndian.PutUint32(dev[offFF:], ffEffectsMax)
 	binary.LittleEndian.PutUint16(dev[offID:], busUSB)
 	binary.LittleEndian.PutUint16(dev[offID+2:], xboxVendor)
 	binary.LittleEndian.PutUint16(dev[offID+4:], xboxProduct)
@@ -117,13 +188,81 @@ func NewUinput(name string) (Pad, error) {
 	setAbs(absHat0X, -1, 1, 0, 0)
 	setAbs(absHat0Y, -1, 1, 0, 0)
 
-	if _, err := syscall.Write(fd, dev); err != nil {
+	if _, err := f.Write(dev); err != nil {
 		return fail("write uinput_user_dev", err)
 	}
-	if err := ioctl(fd, uiDevCreate, 0); err != nil {
+	if err := p.ioctl(uiDevCreate, 0); err != nil {
 		return fail("UI_DEV_CREATE", err)
 	}
+	go p.readLoop()
 	return p, nil
+}
+
+// OnRumble implements Rumbler.
+func (p *uinputPad) OnRumble(fn func(strong, weak, ms uint16)) { p.ff.setHandler(fn) }
+
+// readLoop serves the kernel's force feedback requests until the pad closes.
+// Uploads and erases must be answered, or the game blocks on its ioctl.
+func (p *uinputPad) readLoop() {
+	size := int(unsafe.Sizeof(inputEvent{}))
+	buf := make([]byte, size*8)
+	for {
+		n, err := p.f.Read(buf)
+		if err != nil {
+			return // closed
+		}
+		for off := 0; off+size <= n; off += size {
+			ev := *(*inputEvent)(unsafe.Pointer(&buf[off]))
+			switch {
+			case ev.Type == evUinput && ev.Code == uiFFUpload:
+				p.handleUpload(uint32(ev.Value))
+			case ev.Type == evUinput && ev.Code == uiFFErase:
+				p.handleErase(uint32(ev.Value))
+			case ev.Type == evFF && ev.Code == ffGain:
+				p.ff.setGain(uint32(ev.Value))
+			case ev.Type == evFF:
+				p.ff.play(int16(ev.Code), ev.Value)
+			}
+		}
+	}
+}
+
+func (p *uinputPad) handleUpload(id uint32) {
+	up := ffUpload{RequestID: id}
+	if err := p.ioctlPtr(uiBeginFFUpload, unsafe.Pointer(&up)); err != nil {
+		return
+	}
+	if up.Effect.Type == ffRumble {
+		p.ff.upload(up.Effect.ID, ffEffect{
+			strong: up.Effect.U.Waveform, weak: up.Effect.U.Period, length: up.Effect.ReplayLength,
+		})
+		up.Retval = 0
+	} else {
+		up.Retval = -int32(syscall.EINVAL) // only rumble is supported
+	}
+	p.ioctlPtr(uiEndFFUpload, unsafe.Pointer(&up))
+}
+
+func (p *uinputPad) handleErase(id uint32) {
+	er := ffErase{RequestID: id}
+	if err := p.ioctlPtr(uiBeginFFErase, unsafe.Pointer(&er)); err != nil {
+		return
+	}
+	p.ff.erase(int16(er.EffectID))
+	er.Retval = 0
+	p.ioctlPtr(uiEndFFErase, unsafe.Pointer(&er))
+}
+
+func (p *uinputPad) ioctl(req, arg uintptr) error {
+	var err error
+	if cerr := p.rc.Control(func(fd uintptr) { err = ioctl(int(fd), req, arg) }); cerr != nil {
+		return cerr
+	}
+	return err
+}
+
+func (p *uinputPad) ioctlPtr(req uintptr, arg unsafe.Pointer) error {
+	return p.ioctl(req, uintptr(arg))
 }
 
 func (p *uinputPad) Update(s proto.State) error {
@@ -169,13 +308,13 @@ func (p *uinputPad) Update(s proto.State) error {
 	add(evSyn, 0, 0)
 	size := int(unsafe.Sizeof(inputEvent{}))
 	buf := unsafe.Slice((*byte)(unsafe.Pointer(&evs[0])), len(evs)*size)
-	_, err := syscall.Write(p.fd, buf)
+	_, err := p.f.Write(buf)
 	return err
 }
 
 func (p *uinputPad) Close() error {
-	ioctl(p.fd, uiDevDestroy, 0)
-	return syscall.Close(p.fd)
+	p.ioctl(uiDevDestroy, 0)
+	return p.f.Close()
 }
 
 func b2i(b bool) int {

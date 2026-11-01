@@ -12,6 +12,7 @@ UDP, little endian, default port 9777. Every packet starts with magic `0xA7`, th
 | 6 | discover | phone → PC | none. Broadcast to `255.255.255.255:9777` |
 | 7 | announce | PC → phone | port u16, hostname. Never contains the token |
 | 8 | reject | PC → phone | reason: 1 wrong token, 2 server full. Sent in reply to hello |
+| 9 | rumble | PC → phone | strong u16, weak u16, ms u16. ms 0 means until stopped, strong and weak 0 means stop |
 
 ## State packet (type 4)
 

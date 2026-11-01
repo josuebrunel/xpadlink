@@ -17,6 +17,9 @@ grep -q 'android.permission.INTERNET' "$manifest" || \
 grep -q 'android:screenOrientation' "$manifest" || \
   sed -i 's#android:name=".MainActivity"#android:name=".MainActivity"\n            android:screenOrientation="sensorLandscape"#' "$manifest"
 
+grep -q 'android.permission.VIBRATE' "$manifest" || \
+  sed -i 's#<application#<uses-permission android:name="android.permission.VIBRATE"/>\n    <application#' "$manifest"
+
 # Release signing: use android/key.properties when present (CI writes it), else the debug key.
 gradle=xpadlink_app/android/app/build.gradle.kts
 grep -q keystoreProps "$gradle" || python3 - "$gradle" <<'PY'

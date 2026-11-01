@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
@@ -80,6 +81,7 @@ func main() {
 		Token: *token, MaxPads: *maxPads, Timeout: *timeout,
 		New: factory, Log: log,
 		Port: uint16(addr.Port), Hostname: host,
+		Send: func(to netip.AddrPort, pkt []byte) { conn.WriteToUDPAddrPort(pkt, to) },
 	})
 	defer h.Close()
 

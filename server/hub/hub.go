@@ -21,6 +21,10 @@ type Config struct {
 	Timeout time.Duration // drop a client after this much silence
 	New     vpad.Factory
 
+	// Send writes a datagram to a client. Needed for rumble, which the server
+	// initiates; it must be safe to call from any goroutine.
+	Send func(to netip.AddrPort, pkt []byte)
+
 	// Announced to clients that broadcast a discover probe.
 	Port     uint16
 	Hostname string
@@ -130,6 +134,12 @@ func (h *Hub) hello(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 		if err != nil {
 			h.cfg.Log.Error("create pad failed", "from", from, "err", err)
 			return nil
+		}
+		if r, ok := pad.(vpad.Rumbler); ok && h.cfg.Send != nil {
+			to := from
+			r.OnRumble(func(strong, weak, ms uint16) {
+				h.cfg.Send(to, proto.MarshalRumble(strong, weak, ms))
+			})
 		}
 		s = &session{pad: pad, slot: slot, name: name}
 		h.sessions[from] = s

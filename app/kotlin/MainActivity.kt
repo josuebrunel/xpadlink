@@ -1,7 +1,12 @@
 package com.example.xpadlink
 
 import android.hardware.input.InputManager
+import android.os.Build
 import android.os.Bundle
+import android.os.CombinedVibration
+import android.os.VibrationEffect
+import android.os.Vibrator
+import android.os.VibratorManager
 import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
@@ -10,6 +15,7 @@ import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.EventChannel
+import io.flutter.plugin.common.MethodChannel
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -40,6 +46,9 @@ class MainActivity : FlutterActivity() {
     private var ltKey = false
     private var rtKey = false
     private var deviceName = "gamepad"
+
+    /** Last physical pad that sent input: rumble goes there if it has motors. */
+    private var padDeviceId = -1
 
     private val seenDevices = HashSet<Int>()
     private val lastLog = HashMap<String, Long>()
@@ -75,7 +84,8 @@ class MainActivity : FlutterActivity() {
         Log.i(
             TAG,
             "input device $event id=${d.id} name='${d.name}' vendor=${d.vendorId} product=${d.productId} " +
-                "sources=0x${Integer.toHexString(d.sources)} pad=${isPad(d.sources)} axes=[$axes]"
+                "sources=0x${Integer.toHexString(d.sources)} pad=${isPad(d.sources)} " +
+                "vibrators=${padVibratorCount(d)} axes=[$axes]"
         )
     }
 
@@ -93,6 +103,16 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/rumble")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "vibrate") {
+                    vibrate(call.argument<Int>("strong") ?: 0, call.argument<Int>("weak") ?: 0, call.argument<Int>("ms") ?: 0)
+                    result.success(null)
+                } else {
+                    result.notImplemented()
+                }
+            }
+
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/gamepad")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(args: Any?, events: EventChannel.EventSink?) {
@@ -105,6 +125,80 @@ class MainActivity : FlutterActivity() {
                     sink = null
                 }
             })
+    }
+
+    private fun padVibratorCount(d: InputDevice): Int = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) d.vibratorManager.vibratorIds.size
+        else @Suppress("DEPRECATION") if (d.vibrator.hasVibrator()) 1 else 0
+    } catch (e: Exception) {
+        0
+    }
+
+    private fun phoneVibrator(): Vibrator =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            (getSystemService(VIBRATOR_MANAGER_SERVICE) as VibratorManager).defaultVibrator
+        } else {
+            @Suppress("DEPRECATION") getSystemService(VIBRATOR_SERVICE) as Vibrator
+        }
+
+    /** Rumble from a game: strong and weak motors, 0..65535; ms 0 means "until stopped". */
+    private fun vibrate(strong: Int, weak: Int, ms: Int) {
+        val pad = if (padDeviceId >= 0) InputDevice.getDevice(padDeviceId) else null
+        if (strong == 0 && weak == 0) {
+            try {
+                pad?.let { cancelPad(it) }
+                phoneVibrator().cancel()
+            } catch (e: Exception) {
+                Log.w(TAG, "cancel vibration failed: $e")
+            }
+            return
+        }
+        val dur = (if (ms == 0) 2000 else ms).coerceIn(1, 10000).toLong()
+        val s = strong * 255 / 65535
+        val w = weak * 255 / 65535
+        if (pad != null && padVibratorCount(pad) > 0 && vibratePad(pad, s, w, dur)) {
+            Log.i(TAG, "rumble strong=$strong weak=$weak ms=$ms -> pad '${pad.name}'")
+            return
+        }
+        try {
+            val v = phoneVibrator()
+            val amp = if (v.hasAmplitudeControl()) maxOf(s, w).coerceIn(1, 255) else VibrationEffect.DEFAULT_AMPLITUDE
+            v.vibrate(VibrationEffect.createOneShot(dur, amp))
+            Log.i(TAG, "rumble strong=$strong weak=$weak ms=$ms -> phone")
+        } catch (e: Exception) {
+            Log.w(TAG, "phone vibration failed: $e")
+        }
+    }
+
+    private fun vibratePad(d: InputDevice, s: Int, w: Int, dur: Long): Boolean = try {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val vm = d.vibratorManager
+            val ids = vm.vibratorIds
+            val combo = CombinedVibration.startParallel()
+            var added = 0
+            ids.forEachIndexed { i, id ->
+                // Two motors: first is the strong one. One motor: use the louder value.
+                val amp = if (ids.size > 1) (if (i == 0) s else w) else maxOf(s, w)
+                if (amp > 0) {
+                    combo.addVibrator(id, VibrationEffect.createOneShot(dur, amp.coerceIn(1, 255)))
+                    added++
+                }
+            }
+            if (added > 0) vm.vibrate(combo.combine())
+            true
+        } else {
+            @Suppress("DEPRECATION")
+            d.vibrator.vibrate(VibrationEffect.createOneShot(dur, maxOf(s, w).coerceIn(1, 255)))
+            true
+        }
+    } catch (e: Exception) {
+        Log.w(TAG, "pad vibration failed: $e")
+        false
+    }
+
+    private fun cancelPad(d: InputDevice) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) d.vibratorManager.cancel()
+        else @Suppress("DEPRECATION") d.vibrator.cancel()
     }
 
     private fun isPad(source: Int) =
@@ -143,6 +237,7 @@ class MainActivity : FlutterActivity() {
         }
         val down = e.action == KeyEvent.ACTION_DOWN
         val pad = isPad(e.source)
+        if (pad) padDeviceId = e.deviceId
         noteDevice(e)
         val face = faceBit(e.keyCode)
         val dpad = if (pad) dpadBit(e.keyCode) else 0
@@ -180,6 +275,7 @@ class MainActivity : FlutterActivity() {
             return super.dispatchGenericMotionEvent(e)
         }
         noteDevice(e)
+        padDeviceId = e.deviceId
         lx = deadzone(e.getAxisValue(MotionEvent.AXIS_X))
         ly = deadzone(e.getAxisValue(MotionEvent.AXIS_Y))
         // Xbox and PS4 pads on Android: right stick is Z/RZ, triggers are LTRIGGER/RTRIGGER.

@@ -11,6 +11,7 @@ const int kBye = 5;
 const int kDiscover = 6;
 const int kAnnounce = 7;
 const int kReject = 8;
+const int kRumble = 9;
 const int kRejectBadToken = 1;
 const int kRejectFull = 2;
 const int kStateLen = 18;
@@ -93,4 +94,15 @@ Uint8List encodeDiscover() => Uint8List.fromList([kMagic, kDiscover]);
   if (b.length < 4 || b[0] != kMagic || b[1] != kAnnounce) return null;
   final port = b[2] | (b[3] << 8);
   return (port: port, hostname: utf8.decode(b.sublist(4), allowMalformed: true));
+}
+
+/// Parses a rumble request: strong, weak (0..65535) and duration in ms
+/// (0 means until stopped). Null if malformed.
+({int strong, int weak, int ms})? parseRumble(Uint8List b) {
+  if (b.length != 8 || b[0] != kMagic || b[1] != kRumble) return null;
+  return (
+    strong: b[2] | (b[3] << 8),
+    weak: b[4] | (b[5] << 8),
+    ms: b[6] | (b[7] << 8),
+  );
 }

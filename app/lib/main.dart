@@ -266,6 +266,7 @@ class ControllerScreen extends StatefulWidget {
 
 class _ControllerScreenState extends State<ControllerScreen> {
   static const _channel = EventChannel('xpadlink/gamepad');
+  static const _rumbleChannel = MethodChannel('xpadlink/rumble');
   static final _log = Log('screen');
 
   final _client = PadClient();
@@ -280,6 +281,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
     SystemChrome.setPreferredOrientations(_landscape);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _client.addListener(() => setState(() {}));
+    _client.onRumble = _onRumble;
     _client
         .start(widget.host, widget.port, widget.token, widget.name)
         .catchError((Object e) {
@@ -288,6 +290,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
     });
     _padSub = _channel.receiveBroadcastStream().listen(_onPhysical,
         onError: (Object e) => _log.e('gamepad channel error', e));
+  }
+
+  void _onRumble(int strong, int weak, int ms) {
+    _rumbleChannel.invokeMethod<void>(
+        'vibrate', {'strong': strong, 'weak': weak, 'ms': ms}).catchError(
+        (Object e) => _log.e('vibrate failed', e));
   }
 
   void _onPhysical(dynamic event) {
@@ -313,6 +321,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
   @override
   void dispose() {
     _padSub?.cancel();
+    _client.onRumble = null;
+    _rumbleChannel.invokeMethod<void>('vibrate', {'strong': 0, 'weak': 0, 'ms': 0});
     _client.dispose();
     SystemChrome.setPreferredOrientations(_landscape);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);

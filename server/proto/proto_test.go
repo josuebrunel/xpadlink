@@ -45,3 +45,13 @@ func TestAnnounceRoundTrip(t *testing.T) {
 		t.Fatal("short announce must fail")
 	}
 }
+
+func TestRumbleRoundTrip(t *testing.T) {
+	st, wk, ms, err := ParseRumble(MarshalRumble(65535, 1234, 500))
+	if err != nil || st != 65535 || wk != 1234 || ms != 500 {
+		t.Fatalf("%d %d %d %v", st, wk, ms, err)
+	}
+	if _, _, _, err := ParseRumble([]byte{Magic, TypeRumble, 1}); err == nil {
+		t.Fatal("short rumble must fail")
+	}
+}
