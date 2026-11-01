@@ -17,5 +17,12 @@ grep -q 'android.permission.INTERNET' "$manifest" || \
 grep -q 'android:screenOrientation' "$manifest" || \
   sed -i 's#android:name=".MainActivity"#android:name=".MainActivity"\n            android:screenOrientation="sensorLandscape"#' "$manifest"
 
-(cd xpadlink_app && flutter pub add shared_preferences)
+# Launcher icons from the logo in assets/.
+mkdir -p xpadlink_app/assets
+cp assets/logo*.png xpadlink_app/assets/
+cp flutter_launcher_icons.yaml xpadlink_app/
+
+(cd xpadlink_app && flutter pub add shared_preferences && \
+  flutter pub add --dev flutter_launcher_icons && \
+  dart run flutter_launcher_icons)
 echo "Done. Run: cd xpadlink_app && flutter run   (phone connected with USB debugging)"
