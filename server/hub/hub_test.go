@@ -39,10 +39,11 @@ var (
 
 func TestHelloAuthAndAck(t *testing.T) {
 	h, pads := newTestHub(2)
-	if r := h.Handle(proto.MarshalHello("wrong", "x"), addrA, t0); r != nil || h.Len() != 0 {
-		t.Fatal("bad token must be ignored")
+	r := h.Handle(proto.MarshalHello("wrong", "x"), addrA, t0)
+	if len(r) != 3 || r[1] != proto.TypeReject || r[2] != proto.RejectBadToken || h.Len() != 0 {
+		t.Fatalf("bad token must be rejected without a session: %v", r)
 	}
-	r := h.Handle(proto.MarshalHello("secret", "pixel"), addrA, t0)
+	r = h.Handle(proto.MarshalHello("secret", "pixel"), addrA, t0)
 	if len(r) != 3 || r[1] != proto.TypeAck || r[2] != 0 {
 		t.Fatalf("bad ack: %v", r)
 	}
@@ -86,8 +87,8 @@ func TestUnknownSenderGetsNeedHello(t *testing.T) {
 func TestMaxPadsAndSlotReuse(t *testing.T) {
 	h, _ := newTestHub(1)
 	h.Handle(proto.MarshalHello("secret", "a"), addrA, t0)
-	if r := h.Handle(proto.MarshalHello("secret", "b"), addrB, t0); r != nil {
-		t.Fatal("second client must be rejected")
+	if r := h.Handle(proto.MarshalHello("secret", "b"), addrB, t0); len(r) != 3 || r[1] != proto.TypeReject || r[2] != proto.RejectFull {
+		t.Fatalf("second client must be rejected as full: %v", r)
 	}
 	h.Handle([]byte{proto.Magic, proto.TypeBye}, addrA, t0)
 	if r := h.Handle(proto.MarshalHello("secret", "b"), addrB, t0); len(r) != 3 || r[2] != 0 {

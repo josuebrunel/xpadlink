@@ -18,6 +18,10 @@ const (
 	TypeBye       byte = 5 // client -> server: magic, 5
 	TypeDiscover  byte = 6 // client -> server (broadcast): magic, 6
 	TypeAnnounce  byte = 7 // server -> client: magic, 7, port u16, hostname
+	TypeReject    byte = 8 // server -> client: magic, 8, reason
+
+	RejectBadToken byte = 1
+	RejectFull     byte = 2
 
 	StateLen = 18
 )

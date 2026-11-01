@@ -116,14 +116,14 @@ func (h *Hub) hello(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.Token)) != 1 {
 		h.cfg.Log.Warn("bad token", "from", from)
-		return nil
+		return []byte{proto.Magic, proto.TypeReject, proto.RejectBadToken}
 	}
 	s := h.sessions[from]
 	if s == nil {
 		slot, ok := h.freeSlot()
 		if !ok {
 			h.cfg.Log.Warn("rejected, no free slot", "from", from, "max", h.cfg.MaxPads)
-			return nil
+			return []byte{proto.Magic, proto.TypeReject, proto.RejectFull}
 		}
 		name = clean(name)
 		pad, err := h.cfg.New(fmt.Sprintf("XPadLink - Xbox Controller %d (%s)", slot+1, name))

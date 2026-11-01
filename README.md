@@ -73,6 +73,7 @@ All little endian. Every packet starts with magic `0xA7`, then a type byte.
 | 5 bye | C to S | none |
 | 6 discover | C to S | none, broadcast to `255.255.255.255:9777` |
 | 7 announce | S to C | port u16, hostname (no token) |
+| 8 reject | S to C | reason: 1 wrong token, 2 server full (sent in reply to hello) |
 
 State is sent whenever it changes and at least every 100 ms, so a dropped packet heals fast.
 Stale or duplicate sequence numbers are discarded. A client silent for 3 s loses its device.
