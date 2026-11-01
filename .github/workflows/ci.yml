@@ -57,6 +57,7 @@ jobs:
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
           name: xpadlinkd-snapshot
+          retention-days: 3
           path: |
             dist/*.tar.gz
             dist/*.zip

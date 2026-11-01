@@ -1,0 +1,59 @@
+name: cleanup
+
+# Keeps Actions storage small: deletes old artifacts, caches and workflow runs.
+# Release assets (binaries, APK) are not touched.
+on:
+  schedule:
+    - cron: "0 3 * * 0" # Sundays, 03:00 UTC
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "List what would be deleted, delete nothing"
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+  contents: read
+
+env:
+  ARTIFACT_DAYS: "3"
+  CACHE_DAYS: "7"
+  RUN_DAYS: "14"
+  GH_TOKEN: ${{ github.token }}
+  REPO: ${{ github.repository }}
+  DRY: ${{ inputs.dry_run }}
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: delete old artifacts
+        run: |
+          cutoff=$(date -u -d "$ARTIFACT_DAYS days ago" +%FT%TZ)
+          gh api --paginate "repos/$REPO/actions/artifacts?per_page=100" \
+            --jq ".artifacts[] | select(.created_at < \"$cutoff\") | \"\(.id) \(.name)\"" |
+          while read -r id name; do
+            echo "artifact $id $name"
+            [ "$DRY" = true ] || gh api -X DELETE "repos/$REPO/actions/artifacts/$id" --silent
+          done
+
+      - name: delete old caches
+        run: |
+          cutoff=$(date -u -d "$CACHE_DAYS days ago" +%FT%TZ)
+          gh api --paginate "repos/$REPO/actions/caches?per_page=100" \
+            --jq ".actions_caches[] | select(.last_accessed_at < \"$cutoff\") | \"\(.id) \(.key)\"" |
+          while read -r id key; do
+            echo "cache $id $key"
+            [ "$DRY" = true ] || gh api -X DELETE "repos/$REPO/actions/caches/$id" --silent
+          done
+
+      - name: delete old workflow runs
+        run: |
+          cutoff=$(date -u -d "$RUN_DAYS days ago" +%FT%TZ)
+          gh api --paginate "repos/$REPO/actions/runs?per_page=100" \
+            --jq ".workflow_runs[] | select(.created_at < \"$cutoff\" and .status == \"completed\") | \"\(.id) \(.name)\"" |
+          while read -r id name; do
+            echo "run $id $name"
+            [ "$DRY" = true ] || gh api -X DELETE "repos/$REPO/actions/runs/$id" --silent
+          done

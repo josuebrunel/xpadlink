@@ -17,6 +17,35 @@ grep -q 'android.permission.INTERNET' "$manifest" || \
 grep -q 'android:screenOrientation' "$manifest" || \
   sed -i 's#android:name=".MainActivity"#android:name=".MainActivity"\n            android:screenOrientation="sensorLandscape"#' "$manifest"
 
+# Release signing: use android/key.properties when present (CI writes it), else the debug key.
+gradle=xpadlink_app/android/app/build.gradle.kts
+grep -q keystoreProps "$gradle" || python3 - "$gradle" <<'PY'
+import sys
+p = sys.argv[1]
+s = open(p).read()
+s = "import java.util.Properties\n\n" + s
+s = s.replace("android {", """val keystoreProps = Properties().apply {
+    val f = rootProject.file("key.properties")
+    if (f.exists()) f.inputStream().use { load(it) }
+}
+
+android {""", 1)
+s = s.replace("    buildTypes {", """    signingConfigs {
+        create("release") {
+            if (keystoreProps.containsKey("storeFile")) {
+                storeFile = rootProject.file(keystoreProps["storeFile"] as String)
+                storePassword = keystoreProps["storePassword"] as String
+                keyAlias = keystoreProps["keyAlias"] as String
+                keyPassword = keystoreProps["keyPassword"] as String
+            }
+        }
+    }
+
+    buildTypes {""", 1)
+s = s.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName(if (keystoreProps.containsKey("storeFile")) "release" else "debug")', 1)
+open(p, "w").write(s)
+PY
+
 # Launcher icons from the logo in assets/.
 mkdir -p xpadlink_app/assets
 cp assets/logo*.png xpadlink_app/assets/
