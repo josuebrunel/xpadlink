@@ -29,6 +29,13 @@ class PadClient extends ChangeNotifier {
   PadState _lastSent = PadState();
   bool _disposed = false;
 
+  // Socket recovery: reopen with backoff after a network blip.
+  int _localPort = 0;
+  bool _reopening = false;
+  int _reopenAttempts = 0;
+  int _zeroWrites = 0;
+  Timer? _reopenTimer;
+
   // Link health counters, summarised every 5 s.
   int _helloSent = 0, _statesSent = 0, _acks = 0, _sendFailures = 0;
   int _maxAckGapMs = 0;
@@ -58,23 +65,69 @@ class PadClient extends ChangeNotifier {
     _token = token;
     _name = name;
     try {
-      _sock = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+      await _openSocket();
     } catch (e, st) {
       _log.e('socket bind failed', e, st);
       rethrow;
     }
-    _log.i('socket bound on local port ${_sock!.port}');
-    _sock!.listen(
-      _onSocket,
-      onError: (Object e, StackTrace st) => _log.e('socket error', e, st),
-      onDone: () => _log.w('socket closed'),
-    );
     _timer = Timer.periodic(const Duration(milliseconds: 16), (_) => _tick());
   }
 
-  void _onSocket(RawSocketEvent e) {
-    if (e != RawSocketEvent.read) return;
-    for (var d = _sock?.receive(); d != null; d = _sock?.receive()) {
+  /// Binds the UDP socket, preferring the previous local port so the server
+  /// still sees the same address and keeps our session (and player slot).
+  Future<void> _openSocket() async {
+    RawDatagramSocket s;
+    try {
+      s = await RawDatagramSocket.bind(InternetAddress.anyIPv4, _localPort);
+    } on SocketException {
+      if (_localPort == 0) rethrow;
+      _log.w('local port $_localPort is taken, using a new one');
+      s = await RawDatagramSocket.bind(InternetAddress.anyIPv4, 0);
+    }
+    _localPort = s.port;
+    _sock = s;
+    _log.i('socket bound on local port ${s.port}');
+    s.listen(
+      (e) => _onSocket(s, e),
+      onError: (Object e, StackTrace st) {
+        _log.e('socket error', e, st);
+        _socketBroken(s, 'error');
+      },
+      onDone: () => _socketBroken(s, 'closed'),
+    );
+  }
+
+  /// The socket died (Wi-Fi dropped, interface changed): drop it and retry with
+  /// backoff. Events from an older socket are ignored.
+  void _socketBroken(RawDatagramSocket s, String why) {
+    if (_disposed || !identical(s, _sock) || _reopening) return;
+    _reopening = true;
+    _sock = null;
+    s.close();
+    _setConnected(false, 'socket $why');
+    final ms = (500 << _reopenAttempts.clamp(0, 4)).clamp(500, 5000);
+    _log.w('socket $why, reopening in $ms ms (attempt ${_reopenAttempts + 1})');
+    _reopenTimer = Timer(Duration(milliseconds: ms), _reopen);
+  }
+
+  Future<void> _reopen() async {
+    if (_disposed) return;
+    try {
+      await _openSocket();
+      _reopening = false;
+      _lastHello = _epoch; // say hello right away
+      _log.i('socket reopened');
+    } catch (e) {
+      _reopenAttempts++;
+      final ms = (500 << _reopenAttempts.clamp(0, 4)).clamp(500, 5000);
+      _log.e('reopen failed, retrying in $ms ms', e);
+      _reopenTimer = Timer(Duration(milliseconds: ms), _reopen);
+    }
+  }
+
+  void _onSocket(RawDatagramSocket s, RawSocketEvent e) {
+    if (e != RawSocketEvent.read || !identical(s, _sock)) return;
+    for (var d = s.receive(); d != null; d = s.receive()) {
       final b = d.data;
       if (b.length < 2 || b[0] != kMagic) continue;
       if (b[1] == kAck && b.length >= 3) {
@@ -83,6 +136,7 @@ class PadClient extends ChangeNotifier {
         if (_lastAck != _epoch && gap > _maxAckGapMs) _maxAckGapMs = gap;
         _acks++;
         _lastAck = now;
+        _reopenAttempts = 0;
         if (rejected != null) {
           rejected = null;
           if (!_disposed) notifyListeners();
@@ -138,17 +192,22 @@ class PadClient extends ChangeNotifier {
 
   void _send(Uint8List data) {
     final h = _host;
-    if (h == null) return;
+    final s = _sock;
+    if (h == null || s == null) return; // reopening
     try {
-      final n = _sock?.send(data, h, _port);
-      if (n == 0) {
-        // Kernel send buffer full or no route: the datagram was dropped.
-        _sendFailures++;
-        _log.e('send dropped (0 bytes written)');
+      final n = s.send(data, h, _port);
+      if (n > 0) {
+        _zeroWrites = 0;
+        return;
       }
+      // Kernel send buffer full or no route: the datagram was dropped.
+      _sendFailures++;
+      _log.e('send dropped (0 bytes written)');
+      if (++_zeroWrites >= 3) _socketBroken(s, 'stopped accepting data');
     } catch (e) {
       _sendFailures++;
       _log.e('send failed', e);
+      _socketBroken(s, 'send failed');
     }
   }
 
@@ -174,6 +233,7 @@ class PadClient extends ChangeNotifier {
     _log.i('disposing');
     _disposed = true;
     _timer?.cancel();
+    _reopenTimer?.cancel();
     _send(encodeBye());
     _sock?.close();
     super.dispose();
