@@ -1,90 +1,124 @@
+<p align="center"><img src="app/assets/logo.png" width="120" alt="XPadLink logo"></p>
+
 # XPadLink
 
-Use an Android phone, or a gamepad plugged into the phone, as a gamepad on Linux.
+Use an Android phone, or a gamepad plugged into it, as a gamepad on your Linux PC.
 
 ```
-phone (Flutter)  --UDP, 18 bytes @ 60 Hz-->  xpadlinkd (Go)  --/dev/uinput-->  virtual Xbox 360 pad
+phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox 360 pad
 ```
 
-The virtual device reports Xbox 360 vendor/product IDs (045e:028e), so SDL, Steam, Proton and
-RetroArch recognise it without mapping. One virtual pad is created per phone (up to 4).
+- Shows up as an Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
+- Up to 4 phones at once, one virtual pad each.
+- The app finds the server on your Wi-Fi by itself.
 
-## Server (Linux)
+**Contents:** [Quick start](#quick-start) · [Run in the background](#run-in-the-background) · [Flags](#flags) · [Troubleshooting](#troubleshooting) · [Development](#development) · [Known gaps](#known-gaps)
 
-No dependencies, standard library only. Needs Go 1.22+.
+## Quick start
+
+### 1. Server (Linux PC)
+
+Download `xpadlinkd-linux-amd64.tar.gz` (or `arm64`) from the
+[Releases](https://github.com/josuebrunel/xpadlink/releases) page, or build it (Go 1.22+):
 
 ```sh
-cd server
-go build -o xpadlinkd ./cmd/xpadlinkd
-
-# one-time: uinput access
-sudo modprobe uinput
-echo uinput | sudo tee /etc/modules-load.d/uinput.conf
-sudo cp ../99-xpadlink-uinput.rules /etc/udev/rules.d/
-sudo udevadm control --reload && sudo udevadm trigger
-sudo usermod -aG input $USER        # log out and in again
-
-./xpadlinkd                          # prints a random token and your LAN address
+git clone https://github.com/josuebrunel/xpadlink && cd xpadlink
+make build            # produces server/xpadlinkd
 ```
 
-Open UDP port 9777 in your firewall if you have one (`sudo ufw allow 9777/udp`).
-
-Flags: `-listen :9777`, `-token <secret>`, `-max 4`, `-timeout 3s`, `-dry` (log instead of using uinput), `-log-level debug|info|warn|error` (structured `slog` output; `-dry` defaults to debug).
-
-Prebuilt binaries for Linux, macOS and Windows are attached to each GitHub release. Only Linux can
-create the virtual pad (uinput); on macOS and Windows the daemon runs with `-dry` for development.
-
-### Test without the phone
+One-time setup so you can create virtual pads without root, then log out and back in:
 
 ```sh
-./xpadlinkd -token abc &
-go run ./cmd/xpadsim -token abc -for 20s     # circles the left stick, taps A
-evtest                                       # pick "XPadLink - Xbox Controller 1 (xpadsim)"
+make uinput-setup     # loads uinput, installs the udev rule, adds you to the input group
+make firewall         # only if you use ufw: opens UDP 9777
 ```
 
-`go test ./...` covers the protocol and session logic.
-
-## Android app
-
-Needs the Flutter SDK and a phone with USB debugging.
+Start it:
 
 ```sh
-cd app
-./setup.sh                  # flutter create + copies our code + INTERNET permission
-cd xpadlink_app && flutter run
+server/xpadlinkd      # prints the token and the addresses to use
 ```
 
-The app scans the local subnet on start (UDP broadcast) and lists nearby servers; tap one, then enter
-the token printed by `xpadlinkd`. Discovery only works within one subnet, so you can also type
-`<server-ip>:9777` and save servers for later.
+### 2. App (Android)
 
-- Touch mode: on-screen sticks, D-pad, ABXY, LB/RB, LT/RT (digital), Back/Guide/Start.
-- Physical pad: plug in or pair a controller, press a button. `MainActivity.kt` intercepts the
-  key and motion events (Flutter does not deliver stick axes), the touch overlay hides, and the
-  controller state is forwarded instead.
+Needs the [Flutter SDK](https://docs.flutter.dev/get-started/install) and a phone with USB debugging.
 
-## Wire format
+```sh
+make app              # generates app/xpadlink_app (code, icon, permissions)
+make app-run          # builds and runs on the connected phone
+```
 
-All little endian. Every packet starts with magic `0xA7`, then a type byte.
+### 3. Play
 
-| Type | Dir | Payload |
-|------|-----|---------|
-| 1 hello | C to S | `token \0 name`, sent every 1 s (also the keepalive) |
-| 2 ack | S to C | slot (0 based) |
-| 3 need-hello | S to C | none, sent when state arrives from an unknown address |
-| 4 state | C to S | seq u16, buttons u32, lx ly rx ry i16, lt rt u8 (18 bytes total) |
-| 5 bye | C to S | none |
-| 6 discover | C to S | none, broadcast to `255.255.255.255:9777` |
-| 7 announce | S to C | port u16, hostname (no token) |
-| 8 reject | S to C | reason: 1 wrong token, 2 server full (sent in reply to hello) |
+1. Open the app. Servers on your Wi-Fi appear under **Nearby servers**.
+2. Tap yours, enter the token, press **Connect**. **Save** keeps it for next time.
+3. Use the touch controls, or plug in a controller. The touch controls hide when a controller is used.
 
-State is sent whenever it changes and at least every 100 ms, so a dropped packet heals fast.
-Stale or duplicate sequence numbers are discarded. A client silent for 3 s loses its device.
+Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
+<https://hardwaretester.com/gamepad>.
+
+## Run in the background
+
+`xpadlinkd install` registers a per-user service that starts at login and restarts on failure.
+The token is saved once and reused, so the phone never needs a new one.
+
+| | Linux | macOS | Windows |
+|---|---|---|---|
+| Install | `xpadlinkd install` | `xpadlinkd install` | `xpadlinkd install` |
+| Mechanism | systemd user unit | launchd LaunchAgent | scheduled task at logon |
+| Logs | `journalctl --user -u xpadlinkd -f` | `~/Library/Logs/xpadlinkd.log` | Task Scheduler history |
+| Stop and remove | `xpadlinkd uninstall` | `xpadlinkd uninstall` | `xpadlinkd uninstall` |
+| Token file | `~/.config/xpadlink/token` | `~/Library/Application Support/xpadlink/token` | `%AppData%\xpadlink\token` |
+
+- Pass server flags after `install`: `xpadlinkd install -max 2 -log-level debug`.
+- Show the token any time: `xpadlinkd token`.
+- Linux: to start at boot instead of at login, run `loginctl enable-linger $USER`.
+- Keep the binary where it is: the service points at its current path. Run `install` again after moving it.
+- macOS and Windows can run the daemon, but only Linux can create the virtual pad (uinput). Use `-dry` there.
+
+## Flags
+
+| Flag | Default | Meaning |
+|------|---------|---------|
+| `-listen` | `:9777` | UDP address |
+| `-token` | saved token | Shared secret. Order: flag, `$XPADLINK_TOKEN`, token file (created on first run) |
+| `-max` | `4` | Max simultaneous controllers |
+| `-timeout` | `3s` | Drop a client after this much silence |
+| `-log-level` | `info` | `debug`, `info`, `warn`, `error` |
+| `-dry` | off | Log input instead of creating pads (implies `debug`) |
+
+Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token abc` in `server/`.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| App says **Wrong token** | Run `xpadlinkd token` and re-enter it |
+| App says **Server full** | Raise `-max`, or disconnect another phone |
+| No servers under Nearby | Same Wi-Fi subnet? Guest networks block it. Type `ip:9777` instead. Check the firewall for UDP 9777 |
+| `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
+| Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
+| Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
+| Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
+
+Bluetooth controllers should work the same as USB ones (Android lists them as gamepads) but are untested.
+
+## Development
+
+```sh
+make help       # all targets
+make test       # Go tests
+make dry        # run the server without uinput
+```
+
+- CI (`.github/workflows/ci.yml`): tests on Linux, macOS and Windows, builds `xpadlinkd` for
+  linux, darwin and windows (amd64, arm64). Pushing a `v*` tag publishes a release with the archives.
+- Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
+- Layout: `server/` Go daemon (`proto`, `hub`, `vpad`, `cmd/`), `app/` Flutter code, copied into a generated project by `app/setup.sh`.
 
 ## Known gaps
 
-- Not compiled on a real device or against real `/dev/uinput` yet.
+- Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
 - No rumble, no gyro.
 - LAN only, no encryption. The token only stops other people on the network from injecting input.
-- Server assumes a 64-bit or 32-bit Linux where `struct input_event` matches Go's `syscall.Timeval`.
-- Controllers that put the right stick on RX/RY instead of Z/RZ need a small mapping change in `MainActivity.kt`.
+- Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.

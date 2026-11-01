@@ -4,15 +4,15 @@ package main
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -21,8 +21,16 @@ import (
 )
 
 func main() {
+	if len(os.Args) > 1 && !strings.HasPrefix(os.Args[1], "-") {
+		if err := runSubcommand(os.Args[1], os.Args[2:]); err != nil {
+			fmt.Fprintln(os.Stderr, "xpadlinkd:", err)
+			os.Exit(1)
+		}
+		return
+	}
+
 	listen := flag.String("listen", ":9777", "UDP listen address")
-	token := flag.String("token", "", "shared token clients must send (random if empty)")
+	token := flag.String("token", "", "shared token clients must send (default: $XPADLINK_TOKEN, else a token saved in the config dir)")
 	maxPads := flag.Int("max", 4, "max simultaneous controllers")
 	timeout := flag.Duration("timeout", 3*time.Second, "drop a client after this much silence")
 	dry := flag.Bool("dry", false, "log input instead of creating uinput devices")
@@ -41,13 +49,15 @@ func main() {
 	log := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: lvl}))
 	slog.SetDefault(log)
 
-	if *token == "" {
-		b := make([]byte, 3)
-		if _, err := rand.Read(b); err != nil {
-			fatal("generate token", err)
-		}
-		*token = hex.EncodeToString(b)
+	path, err := tokenPath()
+	if err != nil {
+		fatal("locate config dir", err)
 	}
+	tok, tokSrc, err := resolveToken(*token, os.Getenv("XPADLINK_TOKEN"), path)
+	if err != nil {
+		fatal("resolve token", err)
+	}
+	*token = tok
 
 	factory := vpad.Factory(vpad.NewUinput)
 	if *dry {
@@ -62,7 +72,7 @@ func main() {
 	if err != nil {
 		fatal("listen", err)
 	}
-	log.Info("listening", "addr", conn.LocalAddr().String(), "token", *token, "dry", *dry)
+	log.Info("listening", "addr", conn.LocalAddr().String(), "token", *token, "token_source", tokSrc, "dry", *dry)
 	logLANAddrs(addr.Port)
 
 	host, _ := os.Hostname()
