@@ -14,6 +14,27 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 **Contents:** [Quick start](#quick-start) · [Run in the background](#run-in-the-background) · [Flags](#flags) · [Troubleshooting](#troubleshooting) · [Development](#development) · [Known gaps](#known-gaps)
 
+## Screenshots
+
+<table>
+  <tr>
+    <td><img src="docs/images/app-connect.png" alt="Connect screen with saved and nearby servers"></td>
+    <td><img src="docs/images/app-controller.png" alt="Touch controller"></td>
+  </tr>
+  <tr>
+    <td align="center">Find your PC on Wi-Fi, or pick a saved server</td>
+    <td align="center">Touch controls. They hide when a real pad is used</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/hardwaretester.png" alt="Browser gamepad tester showing XPadLink"></td>
+    <td><img src="docs/images/cemu-input.png" alt="Cemu input settings with the pad mapped"></td>
+  </tr>
+  <tr>
+    <td align="center">The PC sees a standard gamepad</td>
+    <td align="center">Cemu maps it with Auto-assign, no manual setup</td>
+  </tr>
+</table>
+
 ## Quick start
 
 ### 1. Server (Linux PC)
