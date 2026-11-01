@@ -1,3 +1,5 @@
 /server/xpadlinkd
 /app/xpadlink_app/
 /dist/
+# A global "lib/" rule would otherwise hide the Flutter source
+!/app/lib/
