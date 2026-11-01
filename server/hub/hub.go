@@ -99,7 +99,7 @@ func (h *Hub) hello(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 			return nil
 		}
 		name = clean(name)
-		pad, err := h.cfg.New(fmt.Sprintf("XPadLink %d (%s)", slot+1, name))
+		pad, err := h.cfg.New(fmt.Sprintf("XPadLink - Xbox Controller %d (%s)", slot+1, name))
 		if err != nil {
 			h.cfg.Log.Error("create pad failed", "from", from, "err", err)
 			return nil

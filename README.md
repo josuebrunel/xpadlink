@@ -36,7 +36,7 @@ Flags: `-listen :9777`, `-token <secret>`, `-max 4`, `-timeout 3s`, `-dry` (log 
 ```sh
 ./xpadlinkd -token abc &
 go run ./cmd/xpadsim -token abc -for 20s     # circles the left stick, taps A
-evtest                                       # pick "XPadLink 1 (xpadsim)"
+evtest                                       # pick "XPadLink - Xbox Controller 1 (xpadsim)"
 ```
 
 `go test ./...` covers the protocol and session logic.
