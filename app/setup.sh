@@ -13,5 +13,9 @@ manifest=xpadlink_app/android/app/src/main/AndroidManifest.xml
 grep -q 'android.permission.INTERNET' "$manifest" || \
   sed -i 's#<application#<uses-permission android:name="android.permission.INTERNET"/>\n    <application#' "$manifest"
 
+# Lock to landscape from the first frame, ignoring the system auto-rotate setting.
+grep -q 'android:screenOrientation' "$manifest" || \
+  sed -i 's#android:name=".MainActivity"#android:name=".MainActivity"\n            android:screenOrientation="sensorLandscape"#' "$manifest"
+
 (cd xpadlink_app && flutter pub add shared_preferences)
 echo "Done. Run: cd xpadlink_app && flutter run   (phone connected with USB debugging)"
