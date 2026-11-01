@@ -143,3 +143,7 @@ make dry        # run the server without uinput
 - No rumble, no gyro.
 - LAN only, no encryption. The token only stops other people on the network from injecting input.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
+
+## License
+
+[MIT](LICENSE)
