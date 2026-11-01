@@ -25,6 +25,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
+          cache: false
       - name: gofmt
         if: runner.os == 'Linux'
         run: test -z "$(gofmt -l .)"
@@ -50,6 +51,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version-file: server/go.mod
+          cache: false
       - name: build and package
         env:
           GOOS: ${{ matrix.goos }}
@@ -67,7 +69,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: xpadlinkd-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: dist/*.zip dist/*.tar.gz
+          path: |
+            dist/*.zip
+            dist/*.tar.gz
           if-no-files-found: error
 
   release:
