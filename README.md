@@ -80,7 +80,7 @@ Stale or duplicate sequence numbers are discarded. A client silent for 3 s loses
 ## Known gaps
 
 - Not compiled on a real device or against real `/dev/uinput` yet.
-- No rumble, no gyro, no L3/R3 on the touch layout.
+- No rumble, no gyro..
 - LAN only, no encryption. The token only stops other people on the network from injecting input.
 - Server assumes a 64-bit or 32-bit Linux where `struct input_event` matches Go's `syscall.Timeval`.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small mapping change in `MainActivity.kt`.
