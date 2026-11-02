@@ -8,13 +8,27 @@ Use an Android phone, or a gamepad plugged into it, as a gamepad on your Linux P
 phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox 360 pad
 ```
 
-- Shows up as an Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
-- Up to 4 phones at once, one virtual pad each.
-- Vibration: a game's rumble is forwarded to the phone, or to a controller with motors.
-- Gyro and accelerometer: the phone's motion goes to Cemu over DSU, for games that tilt the Wii U GamePad.
-- The app finds the server on your Wi-Fi by itself.
+**What you get**
 
-**Contents:** [Quick start](#quick-start) · [Motion in Cemu](#motion-gyro-in-cemu) · [Run in the background](#run-in-the-background) · [Flags](#flags) · [Troubleshooting](#troubleshooting) · [Development](#development) · [Known gaps](#known-gaps)
+- A virtual Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
+- Touch controls on the phone, or a real controller plugged into it.
+- The app finds your PC on Wi-Fi by itself. No typing an IP.
+- Up to 4 phones at once, one virtual pad each.
+- Vibration: a game's rumble buzzes the phone, or a controller with motors.
+- Motion for Cemu (experimental): the phone's tilt, for Wii U GamePad games.
+
+## Contents
+
+| I want to... | Go to |
+|--------------|-------|
+| See what it looks like | [Screenshots](#screenshots) |
+| Install it and play | [Quick start](#quick-start) |
+| Get vibration or tilt in a game | [Vibration](#vibration) · [Motion in Cemu](#motion-gyro-in-cemu) |
+| Start it automatically at login | [Run in the background](#run-in-the-background) |
+| Fix a problem | [Troubleshooting](#troubleshooting) |
+| Change a setting | [Flags](#flags) |
+| Know what doesn't work yet | [Known gaps](#known-gaps) |
+| Hack on it | [Development](#development) · [Wire format](docs/PROTOCOL.md) |
 
 ## Screenshots
 
@@ -39,10 +53,12 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 ## Quick start
 
+You need three things: the server on your PC, the app on your phone, and both on the same Wi-Fi.
+
 ### 1. Server (Linux PC)
 
 Download `xpadlinkd-linux-amd64.tar.gz` (or `arm64`) from the
-[Releases](https://github.com/josuebrunel/xpadlink/releases) page, or build it (Go 1.22+):
+[Releases](https://github.com/josuebrunel/xpadlink/releases) page and unpack it. Or build it (Go 1.22+):
 
 ```sh
 git clone https://github.com/josuebrunel/xpadlink && cd xpadlink
@@ -56,15 +72,15 @@ make uinput-setup     # loads uinput, installs the udev rule, adds you to the in
 make firewall         # only if you use ufw: opens UDP 9777
 ```
 
-Start it:
+Start it. It prints the token and the addresses to use:
 
 ```sh
-server/xpadlinkd      # prints the token and the addresses to use
+server/xpadlinkd
 ```
 
 ### 2. App (Android)
 
-Needs the [Flutter SDK](https://docs.flutter.dev/get-started/install) and a phone with USB debugging.
+There's no APK download yet, so build it. You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) and a phone with USB debugging:
 
 ```sh
 make app              # generates app/xpadlink_app (code, icon, permissions)
@@ -80,18 +96,24 @@ make app-run          # builds and runs on the connected phone
 Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
 <https://hardwaretester.com/gamepad>.
 
+In the app's bottom bar: the eye hides the touch controls, the rotation icon turns motion on or off, and the flip icon turns the screen upside down if it ended up the wrong way.
+
+## Vibration
+
+A game's rumble goes to the phone, or to your controller if it has motors. Nothing to set up.
+Check it without a game: connect the phone, then run `go run ./cmd/xpadrumble` in `server/`.
+
 ### Motion (gyro) in Cemu
 
-Some Wii U games need the GamePad's motion sensors, like the maze shrines in Breath of the Wild.
-The app sends the phone's gyro and accelerometer (the screen-rotation icon toggles it, and the flip icon turns the screen upside down if it ended up the wrong way), and `xpadlinkd`
-serves them to Cemu as a DSU (Cemuhook) server on `127.0.0.1:26760`.
+**Experimental.** Some Wii U games need the GamePad's motion sensors, like the maze shrines in Breath of the Wild.
+The app sends the phone's gyro and accelerometer, and `xpadlinkd` serves them to Cemu as a DSU (Cemuhook) server on `127.0.0.1:26760`.
 
-1. In Cemu, open **Options, Input settings** and the Wii U GamePad's controller profile.
-2. Add a controller with the API **DSUController**, server `127.0.0.1`, port `26760`, and pick the controller index matching your player number minus one.
-3. Hold the phone landscape, like a GamePad.
+1. In Cemu, open **Options, Input settings** and set the emulated controller to **Wii U GamePad**.
+2. Add a controller with the API **DSUController**, server `127.0.0.1`, port `26760`, and the controller index matching your player number minus one.
+3. Hold the phone landscape, like a GamePad, and press **Calibrate** in Cemu.
 
-No gyroscope on the phone? Many budget phones have none. The app then derives the turn rate from the rotation vector (accelerometer plus magnetometer). It works for tilting, but it's noisier and drifts near magnets. The app log says which source is used: `adb logcat -s xpadlink | grep motion`.
-
+No gyroscope on the phone? Many budget phones have none. The app then derives the turn rate from the rotation vector (accelerometer plus magnetometer). It's noisier and drifts near magnets.
+On such a phone the BOTW maze shrine is not working yet (see [Known gaps](#known-gaps)).
 Use `-dsu ""` to turn the motion server off.
 
 ## Run in the background
@@ -113,6 +135,23 @@ The token is saved once and reused, so the phone never needs a new one.
 - Keep the binary where it is: the service points at its current path. Run `install` again after moving it.
 - macOS and Windows can run the daemon, but only Linux can create the virtual pad (uinput). Use `-dry` there.
 
+## Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| App says **Wrong token** | Run `xpadlinkd token` and re-enter it |
+| App says **Server full** | Raise `-max`, or disconnect another phone |
+| No servers under Nearby | Same Wi-Fi subnet? Guest networks block it. Type `ip:9777` instead. Check the firewall for UDP 9777 |
+| `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
+| Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
+| Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
+| Screen is upside down | Press the flip icon in the app's bottom bar |
+| Cemu shows no motion | `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the daemon log should say `dsu: client subscribed` once the DSUController is added. `motion unavailable` in the app log means the phone has no gyroscope and no rotation vector sensor. Check the rotation icon is on |
+| Motion is wrong in a game | Press **Calibrate** in Cemu with the phone held steady. Open an issue with the game and what happens |
+| Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
+
+Bluetooth controllers should work the same as USB ones (Android lists them as gamepads) but are untested.
+
 ## Flags
 
 | Flag | Default | Meaning |
@@ -127,21 +166,13 @@ The token is saved once and reused, so the phone never needs a new one.
 
 Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token abc` in `server/`.
 
-## Troubleshooting
+## Known gaps
 
-| Problem | Fix |
-|---------|-----|
-| App says **Wrong token** | Run `xpadlinkd token` and re-enter it |
-| App says **Server full** | Raise `-max`, or disconnect another phone |
-| No servers under Nearby | Same Wi-Fi subnet? Guest networks block it. Type `ip:9777` instead. Check the firewall for UDP 9777 |
-| `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
-| Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
-| Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
-| Cemu shows no motion | `motion unavailable` in the app log means the phone has neither a gyroscope nor a rotation vector sensor. Otherwise `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the log should say `dsu: client subscribed` once Cemu has the DSUController added. Check that the phone has a gyroscope and the app's rotation icon is on |
-| Tilt goes the wrong way | Open an issue with the game and direction. The axes are sent unchanged from the phone (the same frame as SDL gamepad sensors); press **Calibrate** in Cemu first |
-| Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
-
-Bluetooth controllers should work the same as USB ones (Android lists them as gamepads) but are untested.
+- Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
+- Motion is experimental. It reaches Cemu, but in the BOTW maze shrine the maze still flips upside down (tested on a phone without a gyroscope, #32). It is only wired to Cemu (DSU).
+- No APK download yet: build the app with Flutter.
+- LAN only, no encryption. The token only stops other people on the network from injecting input.
+- Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 
 ## Development
 
@@ -158,13 +189,6 @@ It plays a rumble effect on the virtual pad, the way a game would.
   linux, darwin and windows (amd64, arm64) with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). Pushing a `v*` tag publishes a release with the archives and checksums.
 - Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 - Layout: `server/` Go daemon (`proto`, `hub`, `vpad`, `dsu`, `cmd/`), `app/` Flutter code, copied into a generated project by `app/setup.sh`.
-
-## Known gaps
-
-- Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
-- Motion works on phones with a gyroscope, or without one (turn rate is derived from the rotation vector, noisier). It is only wired to Cemu (DSU). Axis directions are tuned for Cemu.
-- LAN only, no encryption. The token only stops other people on the network from injecting input.
-- Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 
 ## License
 
