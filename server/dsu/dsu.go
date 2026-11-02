@@ -200,8 +200,10 @@ func (s *Server) padData(slot int) []byte {
 	p = append(p, analog(sl.st)...)
 	p = append(p, make([]byte, 12)...) // touches
 	p = binary.LittleEndian.AppendUint64(p, uint64(time.Since(s.t0).Microseconds()))
-	a, g := phoneToDSU(sl.motion.Accel), phoneToDSU(sl.motion.Gyro)
-	for _, v := range append(a[:], g[:]...) {
+	// Cemu treats DSU motion like SDL gamepad sensors: x right, y toward the top,
+	// z toward the player, gyro counter-clockwise positive. That is the pad frame the
+	// app already sends, so the values pass through untouched.
+	for _, v := range append(sl.motion.Accel[:], sl.motion.Gyro[:]...) {
 		p = binary.LittleEndian.AppendUint32(p, math.Float32bits(v))
 	}
 	return s.packet(msgData, p)
@@ -222,11 +224,6 @@ func (s *Server) packet(typ uint32, payload []byte) []byte {
 	binary.LittleEndian.PutUint32(b[8:], crc32.ChecksumIEEE(b))
 	return b
 }
-
-// phoneToDSU rotates a vector from the pad frame (x right, y up the screen, z out
-// of the screen) into the DualShock frame DSU uses (x right, y out of the face,
-// z toward the player). Both frames are right handed, so it works for gyro too.
-func phoneToDSU(v [3]float32) [3]float32 { return [3]float32{v[0], v[2], -v[1]} }
 
 // stick maps -32768..32768 to 0..255 with 128 at rest.
 func stick(v int) byte { return byte(min(v/256+128, 255)) }

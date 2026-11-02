@@ -91,17 +91,8 @@ func TestHandshakeAndData(t *testing.T) {
 	}
 	f := func(off int) float32 { return math.Float32frombits(binary.LittleEndian.Uint32(p[off:])) }
 	motion := 16 + 4 + 56 // accel x
-	// accel z (out of the screen) becomes DSU y; gyro y (up the screen) becomes -z.
-	if f(motion+4) != 1 || f(motion+12+8) != -10 {
-		t.Errorf("motion mapping: accel y=%v gyro z=%v", f(motion+4), f(motion+12+8))
-	}
-}
-
-func TestPhoneToDSURightHanded(t *testing.T) {
-	x, y := phoneToDSU([3]float32{1, 0, 0}), phoneToDSU([3]float32{0, 1, 0})
-	// cross(x, y) must equal the image of z.
-	cross := [3]float32{x[1]*y[2] - x[2]*y[1], x[2]*y[0] - x[0]*y[2], x[0]*y[1] - x[1]*y[0]}
-	if z := phoneToDSU([3]float32{0, 0, 1}); cross != z {
-		t.Errorf("not right handed: %v vs %v", cross, z)
+	// Cemu reads DSU like SDL sensors, which is the pad frame: values pass through.
+	if f(motion+8) != 1 || f(motion+12+4) != 10 {
+		t.Errorf("motion passthrough: accel z=%v gyro y=%v", f(motion+8), f(motion+12+4))
 	}
 }
