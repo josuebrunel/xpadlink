@@ -14,7 +14,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 - Gyro and accelerometer: the phone's motion goes to Cemu over DSU, for games that tilt the Wii U GamePad.
 - The app finds the server on your Wi-Fi by itself.
 
-**Contents:** [Quick start](#quick-start) · [Run in the background](#run-in-the-background) · [Flags](#flags) · [Troubleshooting](#troubleshooting) · [Development](#development) · [Known gaps](#known-gaps)
+**Contents:** [Quick start](#quick-start) · [Motion in Cemu](#motion-gyro-in-cemu) · [Run in the background](#run-in-the-background) · [Flags](#flags) · [Troubleshooting](#troubleshooting) · [Development](#development) · [Known gaps](#known-gaps)
 
 ## Screenshots
 
@@ -135,6 +135,8 @@ Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token
 | `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
 | Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
 | Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
+| Cemu shows no motion | `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the log should say `dsu: client subscribed` once Cemu has the DSUController added. Check that the phone has a gyroscope and the app's rotation icon is on |
+| Tilt goes the wrong way | Open an issue with the game and direction. The axis mapping is one function, `phoneToDSU` in `server/dsu/dsu.go` |
 | Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
 
 Bluetooth controllers should work the same as USB ones (Android lists them as gamepads) but are untested.
@@ -153,7 +155,7 @@ It plays a rumble effect on the virtual pad, the way a game would.
 - CI (`.github/workflows/ci.yml`): tests on Linux, macOS and Windows, builds `xpadlinkd` for
   linux, darwin and windows (amd64, arm64) with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). Pushing a `v*` tag publishes a release with the archives and checksums.
 - Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-- Layout: `server/` Go daemon (`proto`, `hub`, `vpad`, `cmd/`), `app/` Flutter code, copied into a generated project by `app/setup.sh`.
+- Layout: `server/` Go daemon (`proto`, `hub`, `vpad`, `dsu`, `cmd/`), `app/` Flutter code, copied into a generated project by `app/setup.sh`.
 
 ## Known gaps
 
