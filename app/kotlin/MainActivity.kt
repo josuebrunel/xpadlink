@@ -41,6 +41,8 @@ class MainActivity : FlutterActivity() {
     private var sink: EventChannel.EventSink? = null
     private var motionSink: EventChannel.EventSink? = null
     private val accel = FloatArray(3)
+    private var prevQ: FloatArray? = null
+    private var prevQNs = 0L
 
     private var faceBits = 0
     private var keyDpad = 0
@@ -161,8 +163,13 @@ class MainActivity : FlutterActivity() {
                 System.arraycopy(e.values, 0, accel, 0, 3)
                 return
             }
+            val gyro = if (e.sensor.type == Sensor.TYPE_GYROSCOPE) {
+                floatArrayOf(e.values[0], e.values[1], e.values[2])
+            } else {
+                angularVelocity(e.values, e.timestamp) ?: return
+            }
             val a = toPadFrame(accel[0], accel[1], accel[2])
-            val g = toPadFrame(e.values[0], e.values[1], e.values[2])
+            val g = toPadFrame(gyro[0], gyro[1], gyro[2])
             val k = (180.0 / Math.PI).toFloat()
             val gs = 1f / SensorManager.GRAVITY_EARTH
             motionSink?.success(
@@ -171,6 +178,31 @@ class MainActivity : FlutterActivity() {
         }
 
         override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+    }
+
+    /**
+     * For phones without a gyroscope: turn rate (rad/s, device axes) from the change
+     * between two rotation-vector samples (accelerometer + magnetometer fusion).
+     */
+    private fun angularVelocity(values: FloatArray, ns: Long): FloatArray? {
+        val q = FloatArray(4)
+        SensorManager.getQuaternionFromVector(q, values) // w, x, y, z
+        val p = prevQ
+        val dt = (ns - prevQNs) / 1e9f
+        prevQ = q
+        prevQNs = ns
+        if (p == null || dt <= 0f || dt > 0.2f) return null
+        // rel = conj(p) * q: the rotation from the previous pose to this one, in device axes.
+        val w = p[0] * q[0] + p[1] * q[1] + p[2] * q[2] + p[3] * q[3]
+        val x = p[0] * q[1] - p[1] * q[0] - p[2] * q[3] + p[3] * q[2]
+        val y = p[0] * q[2] + p[1] * q[3] - p[2] * q[0] - p[3] * q[1]
+        val z = p[0] * q[3] - p[1] * q[2] + p[2] * q[1] - p[3] * q[0]
+        val sign = if (w < 0f) -1f else 1f // shortest way round
+        val s = kotlin.math.sqrt(x * x + y * y + z * z)
+        if (s < 1e-6f) return floatArrayOf(0f, 0f, 0f)
+        val angle = 2f * kotlin.math.atan2(s, w * sign)
+        val k = sign * angle / s / dt
+        return floatArrayOf(x * k, y * k, z * k)
     }
 
     /** Device axes are fixed to the portrait body; rotate them to what the user sees. */
@@ -186,16 +218,19 @@ class MainActivity : FlutterActivity() {
 
     private fun startMotion() {
         val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
-        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
         val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+            ?: sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+            ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
         if (gyro == null || acc == null) {
-            Log.w(TAG, "motion unavailable: gyro=${gyro != null} accel=${acc != null}")
+            Log.w(TAG, "motion unavailable: turn-rate source=${gyro != null} accel=${acc != null}")
             return
         }
+        prevQ = null
         val us = 16000 // ~60 Hz
         sm.registerListener(motionListener, acc, us)
         sm.registerListener(motionListener, gyro, us)
-        Log.i(TAG, "motion started (gyro='${gyro.name}', accel='${acc.name}')")
+        Log.i(TAG, "motion started (turn rate from '${gyro.name}', accel='${acc.name}')")
     }
 
     private fun stopMotion() {

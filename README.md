@@ -160,7 +160,7 @@ It plays a rumble effect on the virtual pad, the way a game would.
 ## Known gaps
 
 - Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
-- Motion needs a phone with a gyroscope and is only wired to Cemu (DSU). Axis directions are tuned for Cemu.
+- Motion works on phones with a gyroscope, or without one (turn rate is derived from the rotation vector, noisier). It is only wired to Cemu (DSU). Axis directions are tuned for Cemu.
 - LAN only, no encryption. The token only stops other people on the network from injecting input.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 
