@@ -111,6 +111,9 @@ class PadClient extends ChangeNotifier {
     );
   }
 
+  /// 500 ms doubling per failed attempt, capped at 5 s.
+  int _backoffMs() => (500 << _reopenAttempts.clamp(0, 4)).clamp(500, 5000);
+
   /// The socket died (Wi-Fi dropped, interface changed): drop it and retry with
   /// backoff. Events from an older socket are ignored.
   void _socketBroken(RawDatagramSocket s, String why) {
@@ -119,7 +122,7 @@ class PadClient extends ChangeNotifier {
     _sock = null;
     s.close();
     _setConnected(false, 'socket $why');
-    final ms = (500 << _reopenAttempts.clamp(0, 4)).clamp(500, 5000);
+    final ms = _backoffMs();
     _log.w('socket $why, reopening in $ms ms (attempt ${_reopenAttempts + 1})');
     _reopenTimer = Timer(Duration(milliseconds: ms), _reopen);
   }
@@ -133,7 +136,7 @@ class PadClient extends ChangeNotifier {
       _log.i('socket reopened');
     } catch (e) {
       _reopenAttempts++;
-      final ms = (500 << _reopenAttempts.clamp(0, 4)).clamp(500, 5000);
+      final ms = _backoffMs();
       _log.e('reopen failed, retrying in $ms ms', e);
       _reopenTimer = Timer(Duration(milliseconds: ms), _reopen);
     }
