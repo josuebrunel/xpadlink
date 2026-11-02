@@ -93,7 +93,10 @@ server/xpadlinkd
 
 ### 2. App (Android)
 
-There's no APK download yet, so build it. You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) and a phone with USB debugging:
+Download `xpadlink.apk` from the [Releases](https://github.com/josuebrunel/xpadlink/releases) page and install it
+(allow "install unknown apps" for your browser or file manager when Android asks).
+
+Or build it yourself. You need the [Flutter SDK](https://docs.flutter.dev/get-started/install) and a phone with USB debugging:
 
 ```sh
 make app              # generates app/xpadlink_app (code, icon, permissions)
@@ -187,7 +190,6 @@ Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token
 
 - Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
 - Motion is experimental. It reaches Cemu, but in the BOTW maze shrine the maze still flips upside down (tested on a phone without a gyroscope, #32). It is only wired to Cemu (DSU).
-- No APK download yet: build the app with Flutter.
 - LAN only, no encryption. The token only stops other people on the network from injecting input.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 
