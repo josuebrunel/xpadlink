@@ -2,33 +2,46 @@
 
 # XPadLink
 
+[![CI](https://github.com/josuebrunel/xpadlink/actions/workflows/ci.yml/badge.svg)](https://github.com/josuebrunel/xpadlink/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/josuebrunel/xpadlink)](https://github.com/josuebrunel/xpadlink/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Use an Android phone, or a gamepad plugged into it, as a gamepad on your Linux PC.
 
 ```
 phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox 360 pad
 ```
 
-**What you get**
+## Contents
+
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Quick start](#quick-start)
+  - [1. Server (Linux PC)](#1-server-linux-pc)
+  - [2. App (Android)](#2-app-android)
+  - [3. Play](#3-play)
+- [Vibration and motion](#vibration-and-motion)
+  - [Vibration](#vibration)
+  - [Motion (gyro) in Cemu](#motion-gyro-in-cemu)
+- [Run in the background](#run-in-the-background)
+- [Troubleshooting](#troubleshooting)
+- [Reference](#reference)
+  - [Flags](#flags)
+  - [Known gaps](#known-gaps)
+- [Development](#development)
+  - [Wire format](docs/PROTOCOL.md)
+- [License](#license)
+
+## Features
 
 - A virtual Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
 - Touch controls on the phone, or a real controller plugged into it.
 - The app finds your PC on Wi-Fi by itself. No typing an IP.
 - Up to 4 phones at once, one virtual pad each.
+- A token keeps other people on your network from sending input.
 - Vibration: a game's rumble buzzes the phone, or a controller with motors.
 - Motion for Cemu (experimental): the phone's tilt, for Wii U GamePad games.
-
-## Contents
-
-| I want to... | Go to |
-|--------------|-------|
-| See what it looks like | [Screenshots](#screenshots) |
-| Install it and play | [Quick start](#quick-start) |
-| Get vibration or tilt in a game | [Vibration](#vibration) · [Motion in Cemu](#motion-gyro-in-cemu) |
-| Start it automatically at login | [Run in the background](#run-in-the-background) |
-| Fix a problem | [Troubleshooting](#troubleshooting) |
-| Change a setting | [Flags](#flags) |
-| Know what doesn't work yet | [Known gaps](#known-gaps) |
-| Hack on it | [Development](#development) · [Wire format](docs/PROTOCOL.md) |
+- Runs as a background service on Linux, macOS and Windows.
 
 ## Screenshots
 
@@ -98,7 +111,9 @@ Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
 
 In the app's bottom bar: the eye hides the touch controls, the rotation icon turns motion on or off, and the flip icon turns the screen upside down if it ended up the wrong way.
 
-## Vibration
+## Vibration and motion
+
+### Vibration
 
 A game's rumble goes to the phone, or to your controller if it has motors. Nothing to set up.
 Check it without a game: connect the phone, then run `go run ./cmd/xpadrumble` in `server/`.
@@ -152,7 +167,9 @@ The token is saved once and reused, so the phone never needs a new one.
 
 Bluetooth controllers should work the same as USB ones (Android lists them as gamepads) but are untested.
 
-## Flags
+## Reference
+
+### Flags
 
 | Flag | Default | Meaning |
 |------|---------|---------|
@@ -166,7 +183,7 @@ Bluetooth controllers should work the same as USB ones (Android lists them as ga
 
 Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token abc` in `server/`.
 
-## Known gaps
+### Known gaps
 
 - Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
 - Motion is experimental. It reaches Cemu, but in the BOTW maze shrine the maze still flips upside down (tested on a phone without a gyroscope, #32). It is only wired to Cemu (DSU).
