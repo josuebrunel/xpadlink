@@ -97,7 +97,7 @@ func (h *Hub) Handle(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 	case proto.TypeState:
 		s := h.sessions[from]
 		if s == nil {
-			return []byte{proto.Magic, proto.TypeNeedHello}
+			return proto.MarshalNeedHello()
 		}
 		st, err := proto.ParseState(pkt)
 		if err != nil {
@@ -115,7 +115,7 @@ func (h *Hub) Handle(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 	case proto.TypeMotion:
 		s := h.sessions[from]
 		if s == nil {
-			return []byte{proto.Magic, proto.TypeNeedHello}
+			return proto.MarshalNeedHello()
 		}
 		m, err := proto.ParseMotion(pkt)
 		if err != nil {
@@ -164,14 +164,14 @@ func (h *Hub) hello(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 	}
 	if subtle.ConstantTimeCompare([]byte(token), []byte(h.cfg.Token)) != 1 {
 		h.cfg.Log.Warn("bad token", "from", from)
-		return []byte{proto.Magic, proto.TypeReject, proto.RejectBadToken}
+		return proto.MarshalReject(proto.RejectBadToken)
 	}
 	s := h.sessions[from]
 	if s == nil {
 		slot, ok := h.freeSlot()
 		if !ok {
 			h.cfg.Log.Warn("rejected, no free slot", "from", from, "max", h.cfg.MaxPads)
-			return []byte{proto.Magic, proto.TypeReject, proto.RejectFull}
+			return proto.MarshalReject(proto.RejectFull)
 		}
 		name = clean(name)
 		pad, err := h.cfg.New(fmt.Sprintf("XPadLink - Xbox Controller %d (%s)", slot+1, name))
@@ -190,7 +190,7 @@ func (h *Hub) hello(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 		h.cfg.Log.Info("client joined", "from", from, "player", slot+1, "name", name)
 	}
 	s.lastSeen = now
-	return []byte{proto.Magic, proto.TypeAck, s.slot}
+	return proto.MarshalAck(s.slot)
 }
 
 // Reap drops clients that went silent.

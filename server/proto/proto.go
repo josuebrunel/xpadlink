@@ -107,6 +107,15 @@ func ParseHello(b []byte) (token, name string, err error) {
 	return string(tok), string(nm), nil
 }
 
+// MarshalAck answers a hello with the client's player slot.
+func MarshalAck(slot byte) []byte { return []byte{Magic, TypeAck, slot} }
+
+// MarshalNeedHello tells a client the server has no session for its address.
+func MarshalNeedHello() []byte { return []byte{Magic, TypeNeedHello} }
+
+// MarshalReject refuses a hello; reason is RejectBadToken or RejectFull.
+func MarshalReject(reason byte) []byte { return []byte{Magic, TypeReject, reason} }
+
 // MarshalDiscover builds the broadcast probe clients send to find servers.
 func MarshalDiscover() []byte { return []byte{Magic, TypeDiscover} }
 

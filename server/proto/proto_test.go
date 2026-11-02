@@ -1,6 +1,9 @@
 package proto
 
-import "testing"
+import (
+	"bytes"
+	"testing"
+)
 
 func TestStateRoundTrip(t *testing.T) {
 	in := State{Seq: 513, Buttons: BtnA | BtnDRight, LX: -32768, LY: 32767, RX: -1, RY: 1, LT: 255, RT: 3}
@@ -68,5 +71,20 @@ func TestMotionRoundTrip(t *testing.T) {
 	}
 	if _, err := ParseMotion(b[:10]); err == nil {
 		t.Error("short packet accepted")
+	}
+}
+
+func TestReplyPackets(t *testing.T) {
+	for name, tc := range map[string]struct {
+		got  []byte
+		want []byte
+	}{
+		"ack":       {MarshalAck(2), []byte{Magic, TypeAck, 2}},
+		"needhello": {MarshalNeedHello(), []byte{Magic, TypeNeedHello}},
+		"reject":    {MarshalReject(RejectFull), []byte{Magic, TypeReject, RejectFull}},
+	} {
+		if !bytes.Equal(tc.got, tc.want) {
+			t.Errorf("%s: got % x, want % x", name, tc.got, tc.want)
+		}
 	}
 }
