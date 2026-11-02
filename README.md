@@ -90,6 +90,8 @@ serves them to Cemu as a DSU (Cemuhook) server on `127.0.0.1:26760`.
 2. Add a controller with the API **DSUController**, server `127.0.0.1`, port `26760`, and pick the controller index matching your player number minus one.
 3. Hold the phone landscape, like a GamePad.
 
+No gyroscope on the phone? Many budget phones have none. The app then derives the turn rate from the rotation vector (accelerometer plus magnetometer). It works for tilting, but it's noisier and drifts near magnets. The app log says which source is used: `adb logcat -s xpadlink | grep motion`.
+
 Use `-dsu ""` to turn the motion server off.
 
 ## Run in the background
@@ -135,7 +137,7 @@ Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token
 | `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
 | Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
 | Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
-| Cemu shows no motion | `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the log should say `dsu: client subscribed` once Cemu has the DSUController added. Check that the phone has a gyroscope and the app's rotation icon is on |
+| Cemu shows no motion | `motion unavailable` in the app log means the phone has neither a gyroscope nor a rotation vector sensor. Otherwise `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the log should say `dsu: client subscribed` once Cemu has the DSUController added. Check that the phone has a gyroscope and the app's rotation icon is on |
 | Tilt goes the wrong way | Open an issue with the game and direction. The axis mapping is one function, `phoneToDSU` in `server/dsu/dsu.go` |
 | Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
 

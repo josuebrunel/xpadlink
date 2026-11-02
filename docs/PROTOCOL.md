@@ -38,6 +38,7 @@ D-pad up 11, down 12, left 13, right 14.
 | 16 | 4 each | gyro x, y, z (f32, deg/s) |
 
 Axes are the pad frame: x right, y up the screen, z out of the screen, for a phone held landscape.
+On a phone without a gyroscope the app computes the gyro values from successive rotation-vector samples; the packet is the same.
 The server republishes them over the Cemuhook DSU protocol (UDP `127.0.0.1:26760`), rotated to the
 DualShock frame (x right, y out of the face, z toward the player). A sample older than 500 ms counts as zero.
 
