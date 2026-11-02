@@ -275,6 +275,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   StreamSubscription<dynamic>? _padSub;
   StreamSubscription<dynamic>? _motionSub;
   bool _motionOn = true;
+  bool _flipped = false; // landscape right instead of left
   String? _physical; // name of a physical pad once one has sent input
   bool _showOverlay = true;
   String? _error;
@@ -295,6 +296,15 @@ class _ControllerScreenState extends State<ControllerScreen> {
     _padSub = _channel.receiveBroadcastStream().listen(_onPhysical,
         onError: (Object e) => _log.e('gamepad channel error', e));
     _setMotion(true);
+  }
+
+  /// Forces the other landscape, for when the system doesn't follow the sensor.
+  void _flip() {
+    setState(() => _flipped = !_flipped);
+    SystemChrome.setPreferredOrientations([
+      _flipped ? DeviceOrientation.landscapeRight : DeviceOrientation.landscapeLeft,
+    ]);
+    _log.i('screen flipped to ${_flipped ? 'landscape right' : 'landscape left'}');
   }
 
   /// Gyro and accelerometer for games that tilt the controller (Wii U GamePad).
@@ -389,6 +399,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   tooltip: _motionOn ? 'Motion on' : 'Motion off',
                   icon: Icon(_motionOn ? Icons.screen_rotation : Icons.screen_lock_rotation),
                   onPressed: () => setState(() => _setMotion(!_motionOn)),
+                ),
+                IconButton(
+                  tooltip: 'Flip screen',
+                  icon: const Icon(Icons.flip),
+                  onPressed: _flip,
                 ),
                 IconButton(
                   tooltip: 'Disconnect',

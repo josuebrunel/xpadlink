@@ -83,7 +83,7 @@ Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
 ### Motion (gyro) in Cemu
 
 Some Wii U games need the GamePad's motion sensors, like the maze shrines in Breath of the Wild.
-The app sends the phone's gyro and accelerometer (the screen-rotation icon toggles it), and `xpadlinkd`
+The app sends the phone's gyro and accelerometer (the screen-rotation icon toggles it, and the flip icon turns the screen upside down if it ended up the wrong way), and `xpadlinkd`
 serves them to Cemu as a DSU (Cemuhook) server on `127.0.0.1:26760`.
 
 1. In Cemu, open **Options, Input settings** and the Wii U GamePad's controller profile.
