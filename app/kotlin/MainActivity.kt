@@ -1,5 +1,10 @@
 package com.example.xpadlink
 
+import android.content.Context
+import android.hardware.Sensor
+import android.hardware.SensorEvent
+import android.hardware.SensorEventListener
+import android.hardware.SensorManager
 import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Bundle
@@ -11,6 +16,7 @@ import android.util.Log
 import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
+import android.view.Surface
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -33,6 +39,8 @@ class MainActivity : FlutterActivity() {
     }
 
     private var sink: EventChannel.EventSink? = null
+    private var motionSink: EventChannel.EventSink? = null
+    private val accel = FloatArray(3)
 
     private var faceBits = 0
     private var keyDpad = 0
@@ -72,6 +80,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        stopMotion()
         (getSystemService(INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(deviceListener)
         Log.i(TAG, "MainActivity destroyed")
         super.onDestroy()
@@ -113,6 +122,19 @@ class MainActivity : FlutterActivity() {
                 }
             }
 
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/motion")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(args: Any?, events: EventChannel.EventSink?) {
+                    motionSink = events
+                    startMotion()
+                }
+
+                override fun onCancel(args: Any?) {
+                    stopMotion()
+                    motionSink = null
+                }
+            })
+
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/gamepad")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(args: Any?, events: EventChannel.EventSink?) {
@@ -125,6 +147,60 @@ class MainActivity : FlutterActivity() {
                     sink = null
                 }
             })
+    }
+
+    /**
+     * Sends [ax, ay, az] in g and [gx, gy, gz] in deg/s, rotated into the pad frame
+     * (x right, y up the screen, z out of the screen) for the current screen
+     * rotation, so a phone held like a GamePad reports like one. Emitted on each
+     * gyro sample; the accelerometer value is the latest one.
+     */
+    private val motionListener = object : SensorEventListener {
+        override fun onSensorChanged(e: SensorEvent) {
+            if (e.sensor.type == Sensor.TYPE_ACCELEROMETER) {
+                System.arraycopy(e.values, 0, accel, 0, 3)
+                return
+            }
+            val a = toPadFrame(accel[0], accel[1], accel[2])
+            val g = toPadFrame(e.values[0], e.values[1], e.values[2])
+            val k = (180.0 / Math.PI).toFloat()
+            val gs = 1f / SensorManager.GRAVITY_EARTH
+            motionSink?.success(
+                listOf(a[0] * gs, a[1] * gs, a[2] * gs, g[0] * k, g[1] * k, g[2] * k).map { it.toDouble() }
+            )
+        }
+
+        override fun onAccuracyChanged(sensor: Sensor, accuracy: Int) {}
+    }
+
+    /** Device axes are fixed to the portrait body; rotate them to what the user sees. */
+    private fun toPadFrame(x: Float, y: Float, z: Float): FloatArray {
+        @Suppress("DEPRECATION")
+        return when (windowManager.defaultDisplay.rotation) {
+            Surface.ROTATION_90 -> floatArrayOf(-y, x, z)
+            Surface.ROTATION_180 -> floatArrayOf(-x, -y, z)
+            Surface.ROTATION_270 -> floatArrayOf(y, -x, z)
+            else -> floatArrayOf(x, y, z)
+        }
+    }
+
+    private fun startMotion() {
+        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
+        if (gyro == null || acc == null) {
+            Log.w(TAG, "motion unavailable: gyro=${gyro != null} accel=${acc != null}")
+            return
+        }
+        val us = 16000 // ~60 Hz
+        sm.registerListener(motionListener, acc, us)
+        sm.registerListener(motionListener, gyro, us)
+        Log.i(TAG, "motion started (gyro='${gyro.name}', accel='${acc.name}')")
+    }
+
+    private fun stopMotion() {
+        (getSystemService(Context.SENSOR_SERVICE) as SensorManager).unregisterListener(motionListener)
+        Log.i(TAG, "motion stopped")
     }
 
     private fun padVibratorCount(d: InputDevice): Int = try {

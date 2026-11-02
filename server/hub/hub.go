@@ -25,13 +25,30 @@ type Config struct {
 	// initiates; it must be safe to call from any goroutine.
 	Send func(to netip.AddrPort, pkt []byte)
 
+	// Motion, if set, receives every pad update with the latest motion sample.
+	Motion MotionSink
+
 	// Announced to clients that broadcast a discover probe.
 	Port     uint16
 	Hostname string
 	Log      *slog.Logger // nil discards
 }
 
+// MotionSink consumes pad state plus motion, e.g. a DSU server for Cemu.
+type MotionSink interface {
+	Update(slot byte, st proto.State, m proto.Motion)
+	Remove(slot byte)
+}
+
+// motionStale is how long a motion sample stays valid. A phone that stops
+// sending it (motion switched off) must not leave the last tilt applied.
+const motionStale = 500 * time.Millisecond
+
 type session struct {
+	state    proto.State
+	motion   proto.Motion
+	motionAt time.Time
+
 	pad      vpad.Pad
 	slot     byte
 	name     string
@@ -93,12 +110,39 @@ func (h *Hub) Handle(pkt []byte, from netip.AddrPort, now time.Time) []byte {
 		if err := s.pad.Update(st); err != nil {
 			h.cfg.Log.Error("pad update failed", "from", from, "player", s.slot+1, "err", err)
 		}
+		s.state = st
+		h.pushMotion(s, now)
+	case proto.TypeMotion:
+		s := h.sessions[from]
+		if s == nil {
+			return []byte{proto.Magic, proto.TypeNeedHello}
+		}
+		m, err := proto.ParseMotion(pkt)
+		if err != nil {
+			return nil
+		}
+		if !s.motionAt.IsZero() && !proto.Newer(m.Seq, s.motion.Seq) && now.Sub(s.motionAt) < motionStale {
+			return nil
+		}
+		s.motion, s.motionAt, s.lastSeen = m, now, now
+		h.pushMotion(s, now)
 	case proto.TypeBye:
 		h.drop(from, "bye")
 	case proto.TypeDiscover:
 		return h.discover(from, now)
 	}
 	return nil
+}
+
+func (h *Hub) pushMotion(s *session, now time.Time) {
+	if h.cfg.Motion == nil {
+		return
+	}
+	m := s.motion
+	if now.Sub(s.motionAt) > motionStale {
+		m = proto.Motion{}
+	}
+	h.cfg.Motion.Update(s.slot, s.state, m)
 }
 
 func (h *Hub) discover(from netip.AddrPort, now time.Time) []byte {
@@ -177,6 +221,9 @@ func (h *Hub) drop(addr netip.AddrPort, why string) {
 		return
 	}
 	s.pad.Close()
+	if h.cfg.Motion != nil {
+		h.cfg.Motion.Remove(s.slot)
+	}
 	delete(h.sessions, addr)
 	h.cfg.Log.Info("client left", "from", addr, "player", s.slot+1, "name", s.name, "reason", why)
 }

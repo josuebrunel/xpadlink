@@ -11,6 +11,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 - Shows up as an Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
 - Up to 4 phones at once, one virtual pad each.
 - Vibration: a game's rumble is forwarded to the phone, or to a controller with motors.
+- Gyro and accelerometer: the phone's motion goes to Cemu over DSU, for games that tilt the Wii U GamePad.
 - The app finds the server on your Wi-Fi by itself.
 
 **Contents:** [Quick start](#quick-start) · [Run in the background](#run-in-the-background) · [Flags](#flags) · [Troubleshooting](#troubleshooting) · [Development](#development) · [Known gaps](#known-gaps)
@@ -79,6 +80,18 @@ make app-run          # builds and runs on the connected phone
 Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
 <https://hardwaretester.com/gamepad>.
 
+### Motion (gyro) in Cemu
+
+Some Wii U games need the GamePad's motion sensors, like the maze shrines in Breath of the Wild.
+The app sends the phone's gyro and accelerometer (the screen-rotation icon toggles it), and `xpadlinkd`
+serves them to Cemu as a DSU (Cemuhook) server on `127.0.0.1:26760`.
+
+1. In Cemu, open **Options, Input settings** and the Wii U GamePad's controller profile.
+2. Add a controller with the API **DSUController**, server `127.0.0.1`, port `26760`, and pick the controller index matching your player number minus one.
+3. Hold the phone landscape, like a GamePad.
+
+Use `-dsu ""` to turn the motion server off.
+
 ## Run in the background
 
 `xpadlinkd install` registers a per-user service that starts at login and restarts on failure.
@@ -106,6 +119,7 @@ The token is saved once and reused, so the phone never needs a new one.
 | `-token` | saved token | Shared secret. Order: flag, `$XPADLINK_TOKEN`, token file (created on first run) |
 | `-max` | `4` | Max simultaneous controllers |
 | `-timeout` | `3s` | Drop a client after this much silence |
+| `-dsu` | `127.0.0.1:26760` | DSU motion server for Cemu, empty to disable |
 | `-log-level` | `info` | `debug`, `info`, `warn`, `error` |
 | `-dry` | off | Log input instead of creating pads (implies `debug`) |
 
@@ -144,7 +158,7 @@ It plays a rumble effect on the virtual pad, the way a game would.
 ## Known gaps
 
 - Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
-- No gyro.
+- Motion needs a phone with a gyroscope and is only wired to Cemu (DSU). Axis directions are tuned for Cemu.
 - LAN only, no encryption. The token only stops other people on the network from injecting input.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 

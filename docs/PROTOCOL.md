@@ -13,6 +13,7 @@ UDP, little endian, default port 9777. Every packet starts with magic `0xA7`, th
 | 7 | announce | PC → phone | port u16, hostname. Never contains the token |
 | 8 | reject | PC → phone | reason: 1 wrong token, 2 server full. Sent in reply to hello |
 | 9 | rumble | PC → phone | strong u16, weak u16, ms u16. ms 0 means until stopped, strong and weak 0 means stop |
+| 10 | motion | phone → PC | 28 bytes, see below. Up to 60 Hz while motion is on |
 
 ## State packet (type 4)
 
@@ -27,6 +28,18 @@ UDP, little endian, default port 9777. Every packet starts with magic `0xA7`, th
 
 Buttons (bit): A 0, B 1, X 2, Y 3, LB 4, RB 5, Back 6, Start 7, Guide 8, L3 9, R3 10,
 D-pad up 11, down 12, left 13, right 14.
+
+## Motion packet (type 10)
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 2 | 2 | seq u16 |
+| 4 | 4 each | accel x, y, z (f32, g) |
+| 16 | 4 each | gyro x, y, z (f32, deg/s) |
+
+Axes are the pad frame: x right, y up the screen, z out of the screen, for a phone held landscape.
+The server republishes them over the Cemuhook DSU protocol (UDP `127.0.0.1:26760`), rotated to the
+DualShock frame (x right, y out of the face, z toward the player). A sample older than 500 ms counts as zero.
 
 ## Rules
 

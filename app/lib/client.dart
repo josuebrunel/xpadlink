@@ -18,6 +18,17 @@ class PadClient extends ChangeNotifier {
   /// Called when a game asks the controller to vibrate.
   void Function(int strong, int weak, int ms)? onRumble;
 
+  /// Latest sensor sample, sent at up to 60 Hz when set (null: motion off).
+  PadMotion? motion;
+  int _motionSeq = 0;
+  bool _motionFresh = false;
+
+  /// Called by the UI for each sensor sample.
+  void setMotion(PadMotion m) {
+    motion = m;
+    _motionFresh = true;
+  }
+
   /// Set while the server refuses us (wrong token, server full); cleared on ack.
   String? rejected;
   int slot = -1;
@@ -186,6 +197,12 @@ class PadClient extends ChangeNotifier {
     }
     _logStats(now);
     if (!connected) return;
+
+    final m = motion;
+    if (m != null && _motionFresh) {
+      _send(encodeMotion(_motionSeq++, m));
+      _motionFresh = false;
+    }
 
     final changed = !state.sameAs(_lastSent);
     if (changed || now.difference(_lastSend).inMilliseconds >= 100) {

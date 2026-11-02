@@ -12,6 +12,7 @@ const int kDiscover = 6;
 const int kAnnounce = 7;
 const int kReject = 8;
 const int kRumble = 9;
+const int kMotion = 10;
 const int kRejectBadToken = 1;
 const int kRejectFull = 2;
 const int kStateLen = 18;
@@ -105,4 +106,23 @@ Uint8List encodeDiscover() => Uint8List.fromList([kMagic, kDiscover]);
     weak: b[4] | (b[5] << 8),
     ms: b[6] | (b[7] << 8),
   );
+}
+
+/// Latest motion sample: accelerometer in g, gyroscope in deg/s, in the pad frame
+/// (x right, y up the screen, z out of the screen).
+class PadMotion {
+  PadMotion(this.accel, this.gyro);
+  final List<double> accel, gyro;
+}
+
+Uint8List encodeMotion(int seq, PadMotion m) {
+  final b = ByteData(28);
+  b.setUint8(0, kMagic);
+  b.setUint8(1, kMotion);
+  b.setUint16(2, seq & 0xFFFF, Endian.little);
+  for (var i = 0; i < 3; i++) {
+    b.setFloat32(4 + 4 * i, m.accel[i], Endian.little);
+    b.setFloat32(16 + 4 * i, m.gyro[i], Endian.little);
+  }
+  return b.buffer.asUint8List();
 }

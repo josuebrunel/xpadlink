@@ -6,6 +6,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"math"
 )
 
 const (
@@ -142,3 +143,39 @@ func ParseRumble(b []byte) (strong, weak, ms uint16, err error) {
 
 // Newer reports whether sequence a is newer than b, handling uint16 wraparound.
 func Newer(a, b uint16) bool { return int16(a-b) > 0 }
+
+// TypeMotion carries the phone's accelerometer (g) and gyroscope (deg/s), already
+// rotated into the pad's frame: x right, y up the screen, z out of the screen.
+const (
+	TypeMotion byte = 10 // client -> server: magic, 10, seq u16, accel xyz f32, gyro xyz f32
+	MotionLen       = 28
+)
+
+type Motion struct {
+	Seq   uint16
+	Accel [3]float32 // g
+	Gyro  [3]float32 // deg/s
+}
+
+func (m Motion) Marshal() []byte {
+	b := make([]byte, MotionLen)
+	b[0], b[1] = Magic, TypeMotion
+	binary.LittleEndian.PutUint16(b[2:], m.Seq)
+	for i := 0; i < 3; i++ {
+		binary.LittleEndian.PutUint32(b[4+4*i:], math.Float32bits(m.Accel[i]))
+		binary.LittleEndian.PutUint32(b[16+4*i:], math.Float32bits(m.Gyro[i]))
+	}
+	return b
+}
+
+func ParseMotion(b []byte) (Motion, error) {
+	if len(b) != MotionLen || b[0] != Magic || b[1] != TypeMotion {
+		return Motion{}, ErrBadPacket
+	}
+	m := Motion{Seq: binary.LittleEndian.Uint16(b[2:])}
+	for i := 0; i < 3; i++ {
+		m.Accel[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[4+4*i:]))
+		m.Gyro[i] = math.Float32frombits(binary.LittleEndian.Uint32(b[16+4*i:]))
+	}
+	return m, nil
+}

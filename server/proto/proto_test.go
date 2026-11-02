@@ -55,3 +55,18 @@ func TestRumbleRoundTrip(t *testing.T) {
 		t.Fatal("short rumble must fail")
 	}
 }
+
+func TestMotionRoundTrip(t *testing.T) {
+	in := Motion{Seq: 65535, Accel: [3]float32{0.1, -1, 0.5}, Gyro: [3]float32{-90, 0, 360}}
+	b := in.Marshal()
+	if len(b) != MotionLen {
+		t.Fatalf("len %d", len(b))
+	}
+	out, err := ParseMotion(b)
+	if err != nil || out != in {
+		t.Fatalf("got %+v %v", out, err)
+	}
+	if _, err := ParseMotion(b[:10]); err == nil {
+		t.Error("short packet accepted")
+	}
+}

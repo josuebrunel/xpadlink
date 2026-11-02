@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"xpadlink/dsu"
 	"xpadlink/hub"
 	"xpadlink/vpad"
 )
@@ -34,6 +35,7 @@ func main() {
 	token := flag.String("token", "", "shared token clients must send (default: $XPADLINK_TOKEN, else a token saved in the config dir)")
 	maxPads := flag.Int("max", 4, "max simultaneous controllers")
 	timeout := flag.Duration("timeout", 3*time.Second, "drop a client after this much silence")
+	dsuAddr := flag.String("dsu", "127.0.0.1:26760", "Cemuhook DSU address serving phone motion to Cemu (empty to disable)")
 	dry := flag.Bool("dry", false, "log input instead of creating uinput devices")
 	level := flag.String("log-level", "", "debug, info, warn or error (default info, debug with -dry)")
 	flag.Parse()
@@ -76,9 +78,22 @@ func main() {
 	log.Info("listening", "addr", conn.LocalAddr().String(), "token", *token, "token_source", tokSrc, "dry", *dry)
 	logLANAddrs(addr.Port)
 
+	var sink hub.MotionSink
+	if *dsuAddr != "" {
+		ds, err := dsu.Listen(*dsuAddr, log)
+		if err != nil {
+			log.Warn("motion server disabled", "addr", *dsuAddr, "err", err)
+		} else {
+			defer ds.Close()
+			sink = ds
+			log.Info("motion (DSU) listening", "addr", ds.Addr().String())
+		}
+	}
+
 	host, _ := os.Hostname()
 	h := hub.New(hub.Config{
-		Token: *token, MaxPads: *maxPads, Timeout: *timeout,
+		Motion: sink,
+		Token:  *token, MaxPads: *maxPads, Timeout: *timeout,
 		New: factory, Log: log,
 		Port: uint16(addr.Port), Hostname: host,
 		Send: func(to netip.AddrPort, pkt []byte) { conn.WriteToUDPAddrPort(pkt, to) },

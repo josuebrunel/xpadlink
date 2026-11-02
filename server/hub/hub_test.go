@@ -161,3 +161,39 @@ func TestRumbleIsSentToTheClient(t *testing.T) {
 		t.Fatalf("sent %v to %v: %d %d %d %v", sent, sentTo, st, wk, ms, err)
 	}
 }
+
+type fakeSink struct {
+	last    proto.Motion
+	calls   int
+	removed []byte
+}
+
+func (f *fakeSink) Update(_ byte, _ proto.State, m proto.Motion) { f.last, f.calls = m, f.calls+1 }
+func (f *fakeSink) Remove(slot byte)                             { f.removed = append(f.removed, slot) }
+
+func TestMotionForwardedAndExpires(t *testing.T) {
+	sink := &fakeSink{}
+	h := New(Config{Token: "secret", Motion: sink, New: vpad.Factory(func(string) (vpad.Pad, error) { return &fakePad{}, nil })})
+	if r := h.Handle(proto.Motion{Seq: 1}.Marshal(), addrA, t0); len(r) != 2 || r[1] != proto.TypeNeedHello {
+		t.Fatalf("motion from unknown address should ask for hello: %v", r)
+	}
+	h.Handle(proto.MarshalHello("secret", "p"), addrA, t0)
+	m := proto.Motion{Seq: 2, Gyro: [3]float32{0, 90, 0}}
+	h.Handle(m.Marshal(), addrA, t0)
+	if sink.last != m {
+		t.Fatalf("sink got %+v", sink.last)
+	}
+	h.Handle(proto.Motion{Seq: 1}.Marshal(), addrA, t0) // stale
+	if sink.last != m {
+		t.Fatal("stale motion applied")
+	}
+	// A state packet long after the last motion must not replay the old tilt.
+	h.Handle(proto.State{Seq: 1}.Marshal(), addrA, t0.Add(time.Second))
+	if sink.last != (proto.Motion{}) {
+		t.Fatalf("expired motion still applied: %+v", sink.last)
+	}
+	h.Close()
+	if len(sink.removed) != 1 || sink.removed[0] != 0 {
+		t.Fatalf("slot not released: %v", sink.removed)
+	}
+}

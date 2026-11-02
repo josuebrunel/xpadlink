@@ -9,6 +9,7 @@ import 'client.dart';
 import 'discovery.dart';
 import 'log.dart';
 import 'onscreen.dart';
+import 'protocol.dart';
 import 'servers.dart';
 
 const _landscape = [
@@ -266,11 +267,14 @@ class ControllerScreen extends StatefulWidget {
 
 class _ControllerScreenState extends State<ControllerScreen> {
   static const _channel = EventChannel('xpadlink/gamepad');
+  static const _motionChannel = EventChannel('xpadlink/motion');
   static const _rumbleChannel = MethodChannel('xpadlink/rumble');
   static final _log = Log('screen');
 
   final _client = PadClient();
   StreamSubscription<dynamic>? _padSub;
+  StreamSubscription<dynamic>? _motionSub;
+  bool _motionOn = true;
   String? _physical; // name of a physical pad once one has sent input
   bool _showOverlay = true;
   String? _error;
@@ -290,6 +294,22 @@ class _ControllerScreenState extends State<ControllerScreen> {
     });
     _padSub = _channel.receiveBroadcastStream().listen(_onPhysical,
         onError: (Object e) => _log.e('gamepad channel error', e));
+    _setMotion(true);
+  }
+
+  /// Gyro and accelerometer for games that tilt the controller (Wii U GamePad).
+  void _setMotion(bool on) {
+    _motionOn = on;
+    _motionSub?.cancel();
+    _motionSub = null;
+    if (!on) {
+      _client.motion = null;
+      return;
+    }
+    _motionSub = _motionChannel.receiveBroadcastStream().listen((dynamic e) {
+      final v = (e as List).cast<double>();
+      _client.setMotion(PadMotion(v.sublist(0, 3), v.sublist(3, 6)));
+    }, onError: (Object e) => _log.e('motion channel error', e));
   }
 
   void _onRumble(int strong, int weak, int ms) {
@@ -321,6 +341,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   @override
   void dispose() {
     _padSub?.cancel();
+    _motionSub?.cancel();
     _client.onRumble = null;
     _rumbleChannel.invokeMethod<void>('vibrate', {'strong': 0, 'weak': 0, 'ms': 0});
     _client.dispose();
@@ -363,6 +384,11 @@ class _ControllerScreenState extends State<ControllerScreen> {
                   icon: Icon(
                       _showOverlay ? Icons.visibility_off : Icons.visibility),
                   onPressed: () => setState(() => _showOverlay = !_showOverlay),
+                ),
+                IconButton(
+                  tooltip: _motionOn ? 'Motion on' : 'Motion off',
+                  icon: Icon(_motionOn ? Icons.screen_rotation : Icons.screen_lock_rotation),
+                  onPressed: () => setState(() => _setMotion(!_motionOn)),
                 ),
                 IconButton(
                   tooltip: 'Disconnect',
