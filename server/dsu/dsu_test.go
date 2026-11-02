@@ -96,3 +96,15 @@ func TestHandshakeAndData(t *testing.T) {
 		t.Errorf("motion passthrough: accel z=%v gyro y=%v", f(motion+8), f(motion+12+4))
 	}
 }
+
+func TestButtonBytes(t *testing.T) {
+	st := proto.State{Buttons: proto.BtnDLeft | proto.BtnBack | proto.BtnA | proto.BtnLB, LT: 200, RT: 0}
+	b := dsuButtons(st)
+	if b[0] != 1<<7|1<<0 || b[1] != 1<<5|1<<2|1<<0 {
+		t.Errorf("button bytes %08b", b)
+	}
+	a := analog(st)
+	if a[0] != 255 || a[6] != 255 || a[9] != 255 || a[11] != 200 || a[10] != 0 || a[1] != 0 {
+		t.Errorf("analog bytes % x", a)
+	}
+}

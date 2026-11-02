@@ -228,47 +228,50 @@ func (s *Server) packet(typ uint32, payload []byte) []byte {
 // stick maps -32768..32768 to 0..255 with 128 at rest.
 func stick(v int) byte { return byte(min(v/256+128, 255)) }
 
+// padButtons maps every pad button to its place in the DSU packet: byte 0 or 1 of
+// the button bytes, and the bit inside it. Order follows the protocol, which also
+// gives each of these (except the triggers) an analog pressure byte.
+var padButtons = []struct {
+	bit  uint32
+	byte int // 0: dpad and system buttons, 1: face buttons and shoulders
+	pos  uint
+}{
+	{proto.BtnDLeft, 0, 7}, {proto.BtnDDown, 0, 6}, {proto.BtnDRight, 0, 5}, {proto.BtnDUp, 0, 4},
+	{proto.BtnStart, 0, 3}, {proto.BtnR3, 0, 2}, {proto.BtnL3, 0, 1}, {proto.BtnBack, 0, 0},
+	{proto.BtnY, 1, 7}, {proto.BtnB, 1, 6}, {proto.BtnA, 1, 5}, {proto.BtnX, 1, 4},
+	{proto.BtnRB, 1, 3}, {proto.BtnLB, 1, 2},
+}
+
+// analogOrder is the order of the analog pressure bytes: D-pad L, D, R, U, then Y, B, A, X, R1, L1.
+var analogOrder = []uint32{
+	proto.BtnDLeft, proto.BtnDDown, proto.BtnDRight, proto.BtnDUp,
+	proto.BtnY, proto.BtnB, proto.BtnA, proto.BtnX, proto.BtnRB, proto.BtnLB,
+}
+
 func dsuButtons(st proto.State) []byte {
-	var a, b byte
-	set := func(dst *byte, on bool, bit uint) {
-		if on {
-			*dst |= 1 << bit
+	var b [2]byte
+	for _, pb := range padButtons {
+		if st.Buttons&pb.bit != 0 {
+			b[pb.byte] |= 1 << pb.pos
 		}
 	}
-	// D-Pad Left, Down, Right, Up, Options, R3, L3, Share (bit 7 .. bit 0 is Left .. Share)
-	set(&a, st.Buttons&proto.BtnDLeft != 0, 7)
-	set(&a, st.Buttons&proto.BtnDDown != 0, 6)
-	set(&a, st.Buttons&proto.BtnDRight != 0, 5)
-	set(&a, st.Buttons&proto.BtnDUp != 0, 4)
-	set(&a, st.Buttons&proto.BtnStart != 0, 3)
-	set(&a, st.Buttons&proto.BtnR3 != 0, 2)
-	set(&a, st.Buttons&proto.BtnL3 != 0, 1)
-	set(&a, st.Buttons&proto.BtnBack != 0, 0)
-	// Y, B, A, X, R1, L1, R2, L2
-	set(&b, st.Buttons&proto.BtnY != 0, 7)
-	set(&b, st.Buttons&proto.BtnB != 0, 6)
-	set(&b, st.Buttons&proto.BtnA != 0, 5)
-	set(&b, st.Buttons&proto.BtnX != 0, 4)
-	set(&b, st.Buttons&proto.BtnRB != 0, 3)
-	set(&b, st.Buttons&proto.BtnLB != 0, 2)
-	set(&b, st.RT > 0, 1)
-	set(&b, st.LT > 0, 0)
-	return []byte{a, b}
+	// The triggers are analog on the pad but digital bits here.
+	if st.RT > 0 {
+		b[1] |= 1 << 1
+	}
+	if st.LT > 0 {
+		b[1] |= 1 << 0
+	}
+	return b[:]
 }
 
 func analog(st proto.State) []byte {
 	b := make([]byte, 12)
-	flag := func(on bool) byte {
-		if on {
-			return 255
+	for i, bit := range analogOrder {
+		if st.Buttons&bit != 0 {
+			b[i] = 255
 		}
-		return 0
 	}
-	b[0], b[1] = flag(st.Buttons&proto.BtnDLeft != 0), flag(st.Buttons&proto.BtnDDown != 0)
-	b[2], b[3] = flag(st.Buttons&proto.BtnDRight != 0), flag(st.Buttons&proto.BtnDUp != 0)
-	b[4], b[5] = flag(st.Buttons&proto.BtnY != 0), flag(st.Buttons&proto.BtnB != 0)
-	b[6], b[7] = flag(st.Buttons&proto.BtnA != 0), flag(st.Buttons&proto.BtnX != 0)
-	b[8], b[9] = flag(st.Buttons&proto.BtnRB != 0), flag(st.Buttons&proto.BtnLB != 0)
 	b[10], b[11] = st.RT, st.LT
 	return b
 }
