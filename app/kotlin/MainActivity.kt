@@ -25,6 +25,25 @@ import io.flutter.plugin.common.MethodChannel
 import kotlin.math.abs
 import kotlin.math.max
 
+/** Button bits, Xbox 360 layout. Same values as server/proto/proto.go and app/lib/protocol.dart. */
+private object Btn {
+    const val A = 1 shl 0
+    const val B = 1 shl 1
+    const val X = 1 shl 2
+    const val Y = 1 shl 3
+    const val LB = 1 shl 4
+    const val RB = 1 shl 5
+    const val BACK = 1 shl 6
+    const val START = 1 shl 7
+    const val GUIDE = 1 shl 8
+    const val L3 = 1 shl 9
+    const val R3 = 1 shl 10
+    const val D_UP = 1 shl 11
+    const val D_DOWN = 1 shl 12
+    const val D_LEFT = 1 shl 13
+    const val D_RIGHT = 1 shl 14
+}
+
 /**
  * Bridges a physical gamepad (Bluetooth or USB) to Dart. Flutter does not
  * deliver joystick axes, so we intercept key and motion events here, keep the
@@ -317,25 +336,25 @@ class MainActivity : FlutterActivity() {
             (source and InputDevice.SOURCE_JOYSTICK) == InputDevice.SOURCE_JOYSTICK
 
     private fun faceBit(code: Int): Int = when (code) {
-        KeyEvent.KEYCODE_BUTTON_A -> 1 shl 0
-        KeyEvent.KEYCODE_BUTTON_B -> 1 shl 1
-        KeyEvent.KEYCODE_BUTTON_X -> 1 shl 2
-        KeyEvent.KEYCODE_BUTTON_Y -> 1 shl 3
-        KeyEvent.KEYCODE_BUTTON_L1 -> 1 shl 4
-        KeyEvent.KEYCODE_BUTTON_R1 -> 1 shl 5
-        KeyEvent.KEYCODE_BUTTON_SELECT -> 1 shl 6
-        KeyEvent.KEYCODE_BUTTON_START -> 1 shl 7
-        KeyEvent.KEYCODE_BUTTON_MODE -> 1 shl 8
-        KeyEvent.KEYCODE_BUTTON_THUMBL -> 1 shl 9
-        KeyEvent.KEYCODE_BUTTON_THUMBR -> 1 shl 10
+        KeyEvent.KEYCODE_BUTTON_A -> Btn.A
+        KeyEvent.KEYCODE_BUTTON_B -> Btn.B
+        KeyEvent.KEYCODE_BUTTON_X -> Btn.X
+        KeyEvent.KEYCODE_BUTTON_Y -> Btn.Y
+        KeyEvent.KEYCODE_BUTTON_L1 -> Btn.LB
+        KeyEvent.KEYCODE_BUTTON_R1 -> Btn.RB
+        KeyEvent.KEYCODE_BUTTON_SELECT -> Btn.BACK
+        KeyEvent.KEYCODE_BUTTON_START -> Btn.START
+        KeyEvent.KEYCODE_BUTTON_MODE -> Btn.GUIDE
+        KeyEvent.KEYCODE_BUTTON_THUMBL -> Btn.L3
+        KeyEvent.KEYCODE_BUTTON_THUMBR -> Btn.R3
         else -> 0
     }
 
     private fun dpadBit(code: Int): Int = when (code) {
-        KeyEvent.KEYCODE_DPAD_UP -> 1 shl 11
-        KeyEvent.KEYCODE_DPAD_DOWN -> 1 shl 12
-        KeyEvent.KEYCODE_DPAD_LEFT -> 1 shl 13
-        KeyEvent.KEYCODE_DPAD_RIGHT -> 1 shl 14
+        KeyEvent.KEYCODE_DPAD_UP -> Btn.D_UP
+        KeyEvent.KEYCODE_DPAD_DOWN -> Btn.D_DOWN
+        KeyEvent.KEYCODE_DPAD_LEFT -> Btn.D_LEFT
+        KeyEvent.KEYCODE_DPAD_RIGHT -> Btn.D_RIGHT
         else -> 0
     }
 
@@ -397,10 +416,10 @@ class MainActivity : FlutterActivity() {
 
         val hx = e.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hy = e.getAxisValue(MotionEvent.AXIS_HAT_Y)
-        hatDpad = (if (hy < -0.5f) 1 shl 11 else 0) or
-            (if (hy > 0.5f) 1 shl 12 else 0) or
-            (if (hx < -0.5f) 1 shl 13 else 0) or
-            (if (hx > 0.5f) 1 shl 14 else 0)
+        hatDpad = (if (hy < -0.5f) Btn.D_UP else 0) or
+            (if (hy > 0.5f) Btn.D_DOWN else 0) or
+            (if (hx < -0.5f) Btn.D_LEFT else 0) or
+            (if (hx > 0.5f) Btn.D_RIGHT else 0)
 
         e.device?.name?.let { deviceName = it }
         emit()
