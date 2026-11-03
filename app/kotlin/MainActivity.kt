@@ -8,11 +8,13 @@ import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
 import android.hardware.SensorManager
 import android.hardware.input.InputManager
+import android.media.AudioAttributes
 import android.os.Build
 import android.os.Bundle
 import android.os.CombinedVibration
 import android.os.Handler
 import android.os.Looper
+import android.os.VibrationAttributes
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -382,10 +384,24 @@ class MainActivity : FlutterActivity() {
         try {
             val v = phoneVibrator()
             val amp = if (v.hasAmplitudeControl()) maxOf(s, w).coerceIn(1, 255) else VibrationEffect.DEFAULT_AMPLITUDE
-            v.vibrate(VibrationEffect.createOneShot(dur, amp))
+            vibrateAsMedia(v, VibrationEffect.createOneShot(dur, amp))
             Log.i(TAG, "rumble strong=$strong weak=$weak ms=$ms -> phone")
         } catch (e: Exception) {
             Log.w(TAG, "phone vibration failed: $e")
+        }
+    }
+
+    /**
+     * A game's rumble is not touch feedback. Without attributes Android files a
+     * vibration under TOUCH and drops it when "touch vibration" is off in the
+     * phone settings, so the buzz silently never happens.
+     */
+    private fun vibrateAsMedia(v: Vibrator, effect: VibrationEffect) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            v.vibrate(effect, VibrationAttributes.createForUsage(VibrationAttributes.USAGE_MEDIA))
+        } else {
+            @Suppress("DEPRECATION")
+            v.vibrate(effect, AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_GAME).build())
         }
     }
 
