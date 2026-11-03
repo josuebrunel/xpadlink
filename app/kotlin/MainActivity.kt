@@ -1,6 +1,8 @@
 package com.example.xpadlink
 
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -9,6 +11,8 @@ import android.hardware.input.InputManager
 import android.os.Build
 import android.os.Bundle
 import android.os.CombinedVibration
+import android.os.Handler
+import android.os.Looper
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
@@ -55,9 +59,14 @@ class MainActivity : FlutterActivity() {
     private companion object {
         const val TAG = "xpadlink"
         const val LOG_EVERY_MS = 2000L
+        const val REQ_BT = 4177
     }
 
     private var sink: EventChannel.EventSink? = null
+    private var btSink: EventChannel.EventSink? = null
+    private var bt: BtLink? = null
+    private var btPermission: ((Boolean) -> Unit)? = null
+    private val mainHandler = Handler(Looper.getMainLooper())
     private var motionSink: EventChannel.EventSink? = null
     private val accel = FloatArray(3)
     private var prevQ: FloatArray? = null
@@ -100,7 +109,53 @@ class MainActivity : FlutterActivity() {
         for (id in InputDevice.getDeviceIds()) logDevice("present", InputDevice.getDevice(id))
     }
 
+    /** BLUETOOTH_CONNECT is a runtime permission from Android 12. */
+    private fun withBtPermission(then: (Boolean) -> Unit) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED
+        ) {
+            then(true)
+            return
+        }
+        btPermission = then
+        requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), REQ_BT)
+    }
+
+    override fun onRequestPermissionsResult(code: Int, perms: Array<out String>, results: IntArray) {
+        if (code == REQ_BT) {
+            btPermission?.invoke(results.firstOrNull() == PackageManager.PERMISSION_GRANTED)
+            btPermission = null
+        } else {
+            super.onRequestPermissionsResult(code, perms, results)
+        }
+    }
+
+    private fun btConnect(address: String, result: MethodChannel.Result) {
+        btClose()
+        val link = BtLink(
+            // Ignore a link we already replaced: its late events would hit the new session.
+            onPacket = { l, pkt -> mainHandler.post { if (bt === l) btSink?.success(pkt) } },
+            onClosed = { l -> mainHandler.post { if (bt === l) btSink?.success("closed") } },
+        )
+        bt = link
+        Thread({
+            try {
+                link.connect(address)
+                mainHandler.post { result.success(null) }
+            } catch (e: Exception) {
+                Log.w(TAG, "bt connect failed: ${e.message}")
+                mainHandler.post { result.error("connect", e.message ?: "connect failed", null) }
+            }
+        }, "bt-connect").start()
+    }
+
+    private fun btClose() {
+        bt?.close()
+        bt = null
+    }
+
     override fun onDestroy() {
+        btClose()
         stopMotion()
         (getSystemService(INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(deviceListener)
         Log.i(TAG, "MainActivity destroyed")
@@ -142,6 +197,40 @@ class MainActivity : FlutterActivity() {
                     result.notImplemented()
                 }
             }
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/bt")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "paired" -> withBtPermission { ok ->
+                        if (ok) result.success(BtLink.paired()) else result.error("permission", "Bluetooth permission denied", null)
+                    }
+                    "connect" -> withBtPermission { ok ->
+                        if (ok) btConnect(call.argument<String>("address") ?: "", result)
+                        else result.error("permission", "Bluetooth permission denied", null)
+                    }
+                    "send" -> {
+                        call.argument<ByteArray>("data")?.let { bt?.send(it) }
+                        result.success(null)
+                    }
+                    "close" -> {
+                        btClose()
+                        result.success(null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
+        // Packets from the server, and the String "closed" when the link ends.
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/bt/rx")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(args: Any?, events: EventChannel.EventSink?) {
+                    btSink = events
+                }
+
+                override fun onCancel(args: Any?) {
+                    btSink = null
+                }
+            })
 
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/motion")
             .setStreamHandler(object : EventChannel.StreamHandler {

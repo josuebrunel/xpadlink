@@ -6,7 +6,7 @@ cd "$(dirname "$0")"
 flutter create --org com.example --project-name xpadlink --platforms android xpadlink_app
 rm -f xpadlink_app/test/widget_test.dart  # references the default MyApp
 cp lib/*.dart xpadlink_app/lib/
-cp kotlin/MainActivity.kt xpadlink_app/android/app/src/main/kotlin/com/example/xpadlink/MainActivity.kt
+cp kotlin/*.kt xpadlink_app/android/app/src/main/kotlin/com/example/xpadlink/
 
 # Release builds need the INTERNET permission (flutter create only adds it for debug).
 manifest=xpadlink_app/android/app/src/main/AndroidManifest.xml
@@ -19,6 +19,10 @@ grep -q 'android:screenOrientation' "$manifest" || \
 
 grep -q 'android.permission.VIBRATE' "$manifest" || \
   sed -i 's#<application#<uses-permission android:name="android.permission.VIBRATE"/>\n    <application#' "$manifest"
+
+# Bluetooth: BLUETOOTH_CONNECT on Android 12+, the old pair on older versions.
+grep -q 'android.permission.BLUETOOTH_CONNECT' "$manifest" || \
+  sed -i 's#<application#<uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>\n    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>\n    <application#' "$manifest"
 
 # Release signing: use android/key.properties when present (CI writes it), else the debug key.
 gradle=xpadlink_app/android/app/build.gradle.kts

@@ -7,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'client.dart';
 import 'discovery.dart';
+import 'link.dart';
 import 'log.dart';
 import 'onscreen.dart';
 import 'protocol.dart';
@@ -63,6 +64,8 @@ class _ConnectScreenState extends State<ConnectScreen> {
   List<SavedServer> _saved = [];
   final List<FoundServer> _found = [];
   bool _scanning = false;
+  List<({String name, String address})>? _paired; // null until the user asks
+  String? _pairedError;
 
   @override
   void initState() {
@@ -84,6 +87,34 @@ class _ConnectScreenState extends State<ConnectScreen> {
       _log.e('discovery failed', e, st);
     }
     if (mounted) setState(() => _scanning = false);
+  }
+
+  /// Lists Bluetooth devices paired with the phone. Asks for the Bluetooth
+  /// permission on Android 12 and later, so only when the user taps for it.
+  Future<void> _loadPaired() async {
+    try {
+      final list = await BtLink.paired();
+      if (mounted) {
+        setState(() {
+          _paired = list;
+          _pairedError = null;
+        });
+      }
+    } on PlatformException catch (e) {
+      _log.e('list paired failed', e);
+      if (mounted) setState(() => _pairedError = e.message ?? 'Bluetooth unavailable');
+    }
+  }
+
+  /// Fills the form from a paired PC. The address is "bt:" plus the MAC.
+  void _pickPaired(({String name, String address}) d) {
+    final address = 'bt:${d.address}';
+    final saved = _saved.where((e) => e.address == address);
+    setState(() {
+      _label.text = saved.isNotEmpty ? saved.first.label : d.name;
+      _server.text = address;
+      _token.text = saved.isNotEmpty ? saved.first.token : '';
+    });
   }
 
   /// Fills the form from a discovered server, reusing a saved token if any.
@@ -141,7 +172,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
     var host = address;
     var port = 9777;
     final i = host.lastIndexOf(':');
-    if (i > 0) {
+    if (i > 0 && !address.startsWith('bt:')) {
       port = int.tryParse(host.substring(i + 1)) ?? 9777;
       host = host.substring(0, i);
     }
@@ -216,6 +247,38 @@ class _ConnectScreenState extends State<ConnectScreen> {
             onTap: () => _pick(s),
           ),
         const Divider(height: 32),
+        Row(children: [
+          Text('Bluetooth', style: Theme.of(context).textTheme.titleSmall),
+          const Spacer(),
+          if (_paired != null)
+            IconButton(
+                tooltip: 'Refresh',
+                icon: const Icon(Icons.refresh),
+                onPressed: _loadPaired),
+        ]),
+        if (_paired == null)
+          Align(
+            alignment: Alignment.centerLeft,
+            child: OutlinedButton.icon(
+              onPressed: _loadPaired,
+              icon: const Icon(Icons.bluetooth),
+              label: const Text('Show paired devices'),
+            ),
+          )
+        else if (_paired!.isEmpty)
+          const Text('No paired devices. Pair your PC in Android settings first.',
+              style: TextStyle(color: Colors.white54)),
+        if (_pairedError != null)
+          Text(_pairedError!, style: const TextStyle(color: Colors.redAccent)),
+        for (final d in _paired ?? const <({String name, String address})>[])
+          ListTile(
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.bluetooth),
+            title: Text(d.name),
+            subtitle: Text(d.address),
+            onTap: () => _pickPaired(d),
+          ),
+        const Divider(height: 32),
         TextField(
           controller: _label,
           decoration: const InputDecoration(
@@ -225,7 +288,7 @@ class _ConnectScreenState extends State<ConnectScreen> {
           controller: _server,
           keyboardType: TextInputType.url,
           decoration: const InputDecoration(
-              labelText: 'Server (host:port)', hintText: '192.168.1.20:9777'),
+              labelText: 'Server (host:port, or bt:MAC)', hintText: '192.168.1.20:9777'),
         ),
         TextField(
           controller: _token,

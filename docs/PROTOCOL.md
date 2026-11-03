@@ -1,6 +1,6 @@
 # XPadLink wire format
 
-UDP, little endian, default port 9777. Every packet starts with magic `0xA7`, then a type byte.
+UDP (or Bluetooth, see below), little endian, default port 9777. Every packet starts with magic `0xA7`, then a type byte.
 
 | Type | Name | Dir | Payload |
 |------|------|-----|---------|
@@ -40,6 +40,21 @@ D-pad up 11, down 12, left 13, right 14.
 Axes are the pad frame: x right, y up the screen, z out of the screen, for a phone held landscape.
 On a phone without a gyroscope the app computes the gyro values from successive rotation-vector samples; the packet is the same.
 The server republishes them over the Cemuhook DSU protocol (UDP `127.0.0.1:26760`) unchanged. Cemu treats DSU motion like SDL gamepad sensors (x right, y toward the top, z toward the player, counter-clockwise positive), which is this frame. A sample older than 500 ms counts as zero.
+
+## Bluetooth
+
+The same packets also travel over a Bluetooth Classic RFCOMM stream, for phones that have no shared Wi-Fi with the PC.
+The PC (Linux, BlueZ) registers a server profile with service UUID `6f1d8a52-3c1e-4b7a-9e0d-5a7c2f4b8d11`, so the phone finds the channel by UUID. The phone must be paired with the PC first, in the system settings.
+
+A stream has no packet boundaries, so each packet is prefixed with its length as a u16. A length of 0 or above 512 is invalid: close the connection.
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | 2 | length of the packet, u16 |
+| 2 | length | the packet, exactly as over UDP |
+
+A Bluetooth client is identified by the device address, so a reconnect finds its session and player slot. Discover and announce are not used. Everything else, including hello as keepalive and the 3 s timeout, is the same as over UDP.
+Source of truth: `server/bt/bt.go` and `app/kotlin/BtLink.kt`.
 
 ## Rules
 

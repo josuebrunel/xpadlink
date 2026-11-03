@@ -20,6 +20,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
   - [1. Server (Linux PC)](#1-server-linux-pc)
   - [2. App (Android)](#2-app-android)
   - [3. Play](#3-play)
+- [Bluetooth](#bluetooth)
 - [Vibration and motion](#vibration-and-motion)
   - [Vibration](#vibration)
   - [Motion (gyro) in Cemu](#motion-gyro-in-cemu)
@@ -37,6 +38,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 - A virtual Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
 - Touch controls on the phone, or a real controller plugged into it.
 - The app finds your PC on Wi-Fi by itself. No typing an IP.
+- Over Wi-Fi, or over Bluetooth when there is no shared network.
 - Up to 4 phones at once, one virtual pad each.
 - A token keeps other people on your network from sending input.
 - Vibration: a game's rumble buzzes the phone, or a controller with motors.
@@ -114,6 +116,16 @@ Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
 
 In the app's bottom bar: the eye hides the touch controls, the rotation icon turns motion on or off, and the flip icon turns the screen upside down if it ended up the wrong way.
 
+## Bluetooth
+
+The phone can reach the PC over Bluetooth instead of Wi-Fi. Wi-Fi and Bluetooth phones can play at the same time. It needs Linux with BlueZ (`bluetoothd`, which every desktop has).
+
+1. Pair the phone with the PC once, in the Bluetooth settings of both.
+2. Start `xpadlinkd`. It logs `bluetooth listening` (turn it off with `-bt=false`).
+3. In the app, press **Show paired devices** (Android 12 and later asks for the Bluetooth permission), tap your PC, enter the token, press **Connect**. **Save** keeps it.
+
+Same controls, vibration and motion as on Wi-Fi. If the connect fails, run `bluetoothctl trust <phone-address>` on the PC, and check that `bluetoothctl show` says `Powered: yes`.
+
 ## Vibration and motion
 
 ### Vibration
@@ -166,9 +178,10 @@ The token is saved once and reused, so the phone never needs a new one.
 | Screen is upside down | Press the flip icon in the app's bottom bar |
 | Cemu shows no motion | `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the daemon log should say `dsu: client subscribed` once the DSUController is added. `motion unavailable` in the app log means the phone has no gyroscope and no rotation vector sensor. Check the rotation icon is on |
 | Motion is wrong in a game | Press **Calibrate** in Cemu with the phone held steady. Open an issue with the game and what happens |
+| Bluetooth connect fails | Pair first. Then `bluetoothctl trust <phone-address>`. `xpadlinkd` must log `bluetooth listening`; if it says `bluetooth disabled`, `bluetoothd` is not running |
 | Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
 
-Bluetooth controllers should work the same as USB ones (Android lists them as gamepads) but are untested.
+A Bluetooth controller paired to the phone should work the same as a USB one (Android lists it as a gamepad), but it is untested.
 
 ## Reference
 
@@ -180,6 +193,7 @@ Bluetooth controllers should work the same as USB ones (Android lists them as ga
 | `-token` | saved token | Shared secret. Order: flag, `$XPADLINK_TOKEN`, token file (created on first run) |
 | `-max` | `4` | Max simultaneous controllers |
 | `-timeout` | `3s` | Drop a client after this much silence |
+| `-bt` | on | Accept phones over Bluetooth (Linux, needs `bluetoothd`) |
 | `-dsu` | `127.0.0.1:26760` | DSU motion server for Cemu, empty to disable |
 | `-log-level` | `info` | `debug`, `info`, `warn`, `error` |
 | `-dry` | off | Log input instead of creating pads (implies `debug`) |
@@ -190,7 +204,8 @@ Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token
 
 - Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
 - Motion is experimental. It reaches Cemu, but in the BOTW maze shrine the maze still flips upside down (tested on a phone without a gyroscope, #32). It is only wired to Cemu (DSU).
-- LAN only, no encryption. The token only stops other people on the network from injecting input.
+- Wi-Fi is LAN only with no encryption: the token only stops other people on the network from injecting input. Bluetooth needs pairing, and the link is encrypted by Bluetooth itself.
+- Bluetooth is Linux only, and untested with more than one phone at once.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 
 ## Development
