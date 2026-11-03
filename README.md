@@ -49,20 +49,26 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 <table>
   <tr>
-    <td><img src="docs/images/app-connect.png" alt="Connect screen with Saved, Wi-Fi and Bluetooth tabs"></td>
-    <td><img src="docs/images/app-controller.png" alt="Touch controller"></td>
+    <td><img src="docs/images/app-connect-tabs.png" alt="Connect screen with Saved, Wi-Fi and Bluetooth tabs"></td>
+    <td><img src="docs/images/app-controller-pad.png" alt="Touch controller with the Back button, player ring and link chip"></td>
   </tr>
   <tr>
     <td align="center">Pick a saved server, find your PC on Wi-Fi, or choose a paired one over Bluetooth</td>
-    <td align="center">Touch controls, with the link and ping on top. Back leaves the view, the eye hides the controls (they hide by themselves when a real pad is used)</td>
+    <td align="center">Touch controls, with the link and ping on top. Back leaves the view</td>
   </tr>
   <tr>
+    <td><img src="docs/images/app-controller-hidden.png" alt="Hidden controls view with the logo and live stick values"></td>
     <td><img src="docs/images/hardwaretester.png" alt="Browser gamepad tester showing XPadLink"></td>
-    <td><img src="docs/images/cemu-input.png" alt="Cemu input settings with the pad mapped"></td>
   </tr>
   <tr>
+    <td align="center">The eye hides the touch controls (they hide by themselves when a real pad is used)</td>
     <td align="center">The PC sees a standard gamepad</td>
-    <td align="center">Cemu maps it with Auto-assign, no manual setup</td>
+  </tr>
+  <tr>
+    <td colspan="2"><img src="docs/images/cemu-input.png" alt="Cemu input settings with the pad mapped"></td>
+  </tr>
+  <tr>
+    <td colspan="2" align="center">Cemu maps it with Auto-assign, no manual setup</td>
   </tr>
 </table>
 
