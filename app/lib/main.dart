@@ -41,9 +41,48 @@ class XPadLinkApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'XPadLink',
-        theme: ThemeData.dark(useMaterial3: true),
+        theme: _theme(),
         home: const ConnectScreen(),
       );
+
+  static ThemeData _theme() {
+    final scheme = ColorScheme.fromSeed(
+      seedColor: const Color(0xFF7C6CF0),
+      brightness: Brightness.dark,
+      surface: const Color(0xFF0E0F14),
+    );
+    final field = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(12),
+      borderSide: BorderSide.none,
+    );
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: scheme,
+      scaffoldBackgroundColor: const Color(0xFF0E0F14),
+      cardTheme: CardThemeData(
+        color: const Color(0xFF171923),
+        elevation: 0,
+        margin: EdgeInsets.zero,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(16),
+          side: const BorderSide(color: Color(0xFF262A38)),
+        ),
+      ),
+      inputDecorationTheme: InputDecorationTheme(
+        filled: true,
+        fillColor: const Color(0xFF1F2230),
+        border: field,
+        enabledBorder: field,
+        focusedBorder: field.copyWith(
+            borderSide: BorderSide(color: scheme.primary, width: 1.5)),
+        isDense: true,
+      ),
+      tabBarTheme: const TabBarThemeData(
+        dividerColor: Color(0xFF262A38),
+        labelStyle: TextStyle(fontWeight: FontWeight.w600),
+      ),
+    );
+  }
 }
 
 class ConnectScreen extends StatefulWidget {
@@ -53,7 +92,8 @@ class ConnectScreen extends StatefulWidget {
   State<ConnectScreen> createState() => _ConnectScreenState();
 }
 
-class _ConnectScreenState extends State<ConnectScreen> {
+class _ConnectScreenState extends State<ConnectScreen>
+    with SingleTickerProviderStateMixin {
   static final _log = Log('connect');
 
   final _store = ServerStore();
@@ -67,10 +107,28 @@ class _ConnectScreenState extends State<ConnectScreen> {
   List<({String name, String address})>? _paired; // null until the user asks
   String? _pairedError;
 
+  // Tabs: saved servers, then the two ways to find a new one.
+  late final _tabs = TabController(length: 3, vsync: this);
+  static const _tabWifi = 1;
+
   @override
   void initState() {
     super.initState();
-    _load().then((_) => _scan());
+    _load().then((_) {
+      // Nothing saved yet: start where a new server is found.
+      if (_saved.isEmpty && mounted) _tabs.index = _tabWifi;
+      return _scan();
+    });
+  }
+
+  @override
+  void dispose() {
+    _tabs.dispose();
+    _label.dispose();
+    _server.dispose();
+    _token.dispose();
+    _name.dispose();
+    super.dispose();
   }
 
   Future<void> _scan() async {
@@ -156,9 +214,11 @@ class _ConnectScreenState extends State<ConnectScreen> {
   }
 
   void _edit(SavedServer s) {
-    _label.text = s.label == s.address ? '' : s.label;
-    _server.text = s.address;
-    _token.text = s.token;
+    setState(() {
+      _label.text = s.label == s.address ? '' : s.label;
+      _server.text = s.address;
+      _token.text = s.token;
+    });
   }
 
   Future<void> _connect() => _open(_server.text.trim(), _token.text.trim());
@@ -190,124 +250,253 @@ class _ConnectScreenState extends State<ConnectScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('XPadLink')),
-      body: ListView(padding: const EdgeInsets.all(24), children: [
-        if (_saved.isNotEmpty) ...[
-          Text('Saved servers', style: Theme.of(context).textTheme.titleSmall),
-          for (final s in _saved)
-            ListTile(
-              contentPadding: EdgeInsets.zero,
-              title: Text(s.label),
-              subtitle: s.label == s.address ? null : Text(s.address),
-              onTap: () => _open(s.address, s.token),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                IconButton(
-                  tooltip: 'Edit',
-                  icon: const Icon(Icons.edit),
-                  onPressed: () => _edit(s),
-                ),
-                IconButton(
-                  tooltip: 'Delete',
-                  icon: const Icon(Icons.delete_outline),
-                  onPressed: () => _delete(s),
+      body: SafeArea(
+        child: LayoutBuilder(builder: (context, box) {
+          final picker = _picker(context);
+          final form = _form(context);
+          // Landscape (how the app runs): servers on the left, form on the right.
+          if (box.maxWidth >= 640) {
+            return Padding(
+              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                _header(context),
+                const SizedBox(height: 12),
+                Expanded(
+                  child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    Expanded(flex: 5, child: picker),
+                    const SizedBox(width: 16),
+                    Expanded(flex: 4, child: SingleChildScrollView(child: form)),
+                  ]),
                 ),
               ]),
+            );
+          }
+          return ListView(padding: const EdgeInsets.all(16), children: [
+            _header(context),
+            const SizedBox(height: 12),
+            SizedBox(height: 320, child: picker),
+            const SizedBox(height: 16),
+            form,
+          ]);
+        }),
+      ),
+    );
+  }
+
+  Widget _header(BuildContext context) {
+    final t = Theme.of(context);
+    return Row(children: [
+      Icon(Icons.sports_esports, color: t.colorScheme.primary),
+      const SizedBox(width: 10),
+      Text('XPadLink',
+          style: t.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+    ]);
+  }
+
+  /// Saved servers, nearby servers on Wi-Fi, paired PCs over Bluetooth.
+  Widget _picker(BuildContext context) {
+    return Card(
+      clipBehavior: Clip.antiAlias,
+      child: Column(children: [
+        TabBar(controller: _tabs, tabs: [
+          Tab(
+              height: 44,
+              icon: const Icon(Icons.bookmark_outline, size: 20),
+              text: 'Saved${_saved.isEmpty ? '' : ' (${_saved.length})'}'),
+          const Tab(height: 44, icon: Icon(Icons.wifi, size: 20), text: 'Wi-Fi'),
+          const Tab(
+              height: 44,
+              icon: Icon(Icons.bluetooth, size: 20),
+              text: 'Bluetooth'),
+        ]),
+        Expanded(
+          child: TabBarView(controller: _tabs, children: [
+            _savedTab(),
+            _wifiTab(),
+            _bluetoothTab(),
+          ]),
+        ),
+      ]),
+    );
+  }
+
+  Widget _hint(String text, {Color? color, Widget? action}) => Center(
+        child: Padding(
+          padding: const EdgeInsets.all(20),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(text,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: color ?? Colors.white54)),
+            if (action != null) ...[const SizedBox(height: 12), action],
+          ]),
+        ),
+      );
+
+  Widget _savedTab() {
+    if (_saved.isEmpty) {
+      return _hint('No saved servers yet. Find one on Wi-Fi or Bluetooth, '
+          'then press Save.');
+    }
+    return ListView(padding: const EdgeInsets.symmetric(vertical: 4), children: [
+      for (final s in _saved)
+        ListTile(
+          leading: Icon(s.address.startsWith('bt:') ? Icons.bluetooth : Icons.wifi),
+          title: Text(s.label),
+          subtitle: s.label == s.address ? null : Text(s.address),
+          onTap: () => _open(s.address, s.token),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            IconButton(
+              tooltip: 'Edit',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _edit(s),
             ),
-          const Divider(height: 32),
-        ],
-        Row(children: [
-          Text('Nearby servers', style: Theme.of(context).textTheme.titleSmall),
-          const Spacer(),
+            IconButton(
+              tooltip: 'Delete',
+              icon: const Icon(Icons.delete_outline),
+              onPressed: () => _delete(s),
+            ),
+          ]),
+        ),
+    ]);
+  }
+
+  Widget _wifiTab() {
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+        child: Row(children: [
+          Expanded(
+              child: Text(
+                  _scanning ? 'Looking on this network…' : 'Servers on this network',
+                  style: const TextStyle(color: Colors.white54))),
           if (_scanning)
-            const SizedBox(
-                width: 16,
-                height: 16,
-                child: CircularProgressIndicator(strokeWidth: 2))
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                  width: 16,
+                  height: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
           else
             IconButton(
                 tooltip: 'Scan again',
                 icon: const Icon(Icons.refresh),
                 onPressed: _scan),
         ]),
-        if (_found.isEmpty)
-          Padding(
-            padding: const EdgeInsets.only(bottom: 8),
-            child: Text(
-                _scanning
-                    ? 'Looking for servers on this network…'
-                    : 'None found. Enter the address below.',
-                style: const TextStyle(color: Colors.white54)),
-          ),
-        for (final s in _found)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.computer),
-            title: Text(s.hostname),
-            subtitle: Text(s.address),
-            onTap: () => _pick(s),
-          ),
-        const Divider(height: 32),
-        Row(children: [
-          Text('Bluetooth', style: Theme.of(context).textTheme.titleSmall),
-          const Spacer(),
-          if (_paired != null)
-            IconButton(
-                tooltip: 'Refresh',
-                icon: const Icon(Icons.refresh),
-                onPressed: _loadPaired),
+      ),
+      Expanded(
+        child: _found.isEmpty
+            ? _hint(_scanning
+                ? ' '
+                : 'None found. Guest networks block discovery: type the '
+                    'address on the right instead.')
+            : ListView(children: [
+                for (final s in _found)
+                  ListTile(
+                    leading: const Icon(Icons.computer),
+                    title: Text(s.hostname),
+                    subtitle: Text(s.address),
+                    onTap: () => _pick(s),
+                  ),
+              ]),
+      ),
+    ]);
+  }
+
+  Widget _bluetoothTab() {
+    final paired = _paired;
+    if (paired == null) {
+      return _hint(
+        _pairedError ?? 'Pair your PC in Android settings first, then list '
+            'the paired devices here.',
+        color: _pairedError == null ? null : Colors.redAccent,
+        action: FilledButton.tonalIcon(
+          onPressed: _loadPaired,
+          icon: const Icon(Icons.bluetooth_searching),
+          label: const Text('Show paired devices'),
+        ),
+      );
+    }
+    return Column(children: [
+      Padding(
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
+        child: Row(children: [
+          const Expanded(
+              child: Text('Paired with this phone',
+                  style: TextStyle(color: Colors.white54))),
+          IconButton(
+              tooltip: 'Refresh',
+              icon: const Icon(Icons.refresh),
+              onPressed: _loadPaired),
         ]),
-        if (_paired == null)
-          Align(
-            alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
-              onPressed: _loadPaired,
-              icon: const Icon(Icons.bluetooth),
-              label: const Text('Show paired devices'),
+      ),
+      Expanded(
+        child: paired.isEmpty
+            ? _hint('No paired devices. Pair your PC in Android settings first.')
+            : ListView(children: [
+                for (final d in paired)
+                  ListTile(
+                    leading: const Icon(Icons.bluetooth),
+                    title: Text(d.name),
+                    subtitle: Text(d.address),
+                    onTap: () => _pickPaired(d),
+                  ),
+              ]),
+      ),
+    ]);
+  }
+
+  Widget _form(BuildContext context) {
+    final bt = _server.text.startsWith('bt:');
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          TextField(
+            controller: _label,
+            decoration: const InputDecoration(
+                labelText: 'Label (optional)', hintText: 'Living room PC'),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _server,
+            keyboardType: TextInputType.url,
+            onChanged: (_) => setState(() {}),
+            decoration: InputDecoration(
+              labelText: 'Server',
+              hintText: '192.168.1.20:9777  or  bt:AA:BB:CC:DD:EE:FF',
+              prefixIcon: Icon(bt ? Icons.bluetooth : Icons.wifi),
             ),
-          )
-        else if (_paired!.isEmpty)
-          const Text('No paired devices. Pair your PC in Android settings first.',
-              style: TextStyle(color: Colors.white54)),
-        if (_pairedError != null)
-          Text(_pairedError!, style: const TextStyle(color: Colors.redAccent)),
-        for (final d in _paired ?? const <({String name, String address})>[])
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            leading: const Icon(Icons.bluetooth),
-            title: Text(d.name),
-            subtitle: Text(d.address),
-            onTap: () => _pickPaired(d),
           ),
-        const Divider(height: 32),
-        TextField(
-          controller: _label,
-          decoration: const InputDecoration(
-              labelText: 'Label (optional)', hintText: 'Living room PC'),
-        ),
-        TextField(
-          controller: _server,
-          keyboardType: TextInputType.url,
-          decoration: const InputDecoration(
-              labelText: 'Server (host:port, or bt:MAC)', hintText: '192.168.1.20:9777'),
-        ),
-        TextField(
-          controller: _token,
-          decoration: const InputDecoration(
-              labelText: 'Token', hintText: 'printed by xpadlinkd'),
-        ),
-        TextField(
-          controller: _name,
-          decoration: const InputDecoration(labelText: 'Device name'),
-        ),
-        const SizedBox(height: 24),
-        Row(children: [
-          Expanded(
-              child: FilledButton(
-                  onPressed: _connect, child: const Text('Connect'))),
-          const SizedBox(width: 12),
-          OutlinedButton(onPressed: _save, child: const Text('Save')),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _token,
+            decoration: const InputDecoration(
+                labelText: 'Token',
+                hintText: 'printed by xpadlinkd',
+                prefixIcon: Icon(Icons.key)),
+          ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _name,
+            decoration: const InputDecoration(
+                labelText: 'Device name', prefixIcon: Icon(Icons.smartphone)),
+          ),
+          const SizedBox(height: 16),
+          Row(children: [
+            Expanded(
+                child: FilledButton.icon(
+                    onPressed: _connect,
+                    icon: const Icon(Icons.play_arrow),
+                    label: const Text('Connect'))),
+            const SizedBox(width: 12),
+            OutlinedButton.icon(
+                onPressed: _save,
+                icon: const Icon(Icons.bookmark_add_outlined),
+                label: const Text('Save')),
+          ]),
         ]),
-      ]),
+      ),
     );
   }
 }
