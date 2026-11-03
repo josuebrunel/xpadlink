@@ -12,6 +12,7 @@ import 'log.dart';
 import 'onscreen.dart';
 import 'protocol.dart';
 import 'servers.dart';
+import 'theme.dart';
 
 const _landscape = [
   DeviceOrientation.landscapeLeft,
@@ -41,48 +42,10 @@ class XPadLinkApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) => MaterialApp(
         title: 'XPadLink',
-        theme: _theme(),
+        debugShowCheckedModeBanner: false,
+        theme: buildTheme(),
         home: const ConnectScreen(),
       );
-
-  static ThemeData _theme() {
-    final scheme = ColorScheme.fromSeed(
-      seedColor: const Color(0xFF7C6CF0),
-      brightness: Brightness.dark,
-      surface: const Color(0xFF0E0F14),
-    );
-    final field = OutlineInputBorder(
-      borderRadius: BorderRadius.circular(12),
-      borderSide: BorderSide.none,
-    );
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: const Color(0xFF0E0F14),
-      cardTheme: CardThemeData(
-        color: const Color(0xFF171923),
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(16),
-          side: const BorderSide(color: Color(0xFF262A38)),
-        ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: const Color(0xFF1F2230),
-        border: field,
-        enabledBorder: field,
-        focusedBorder: field.copyWith(
-            borderSide: BorderSide(color: scheme.primary, width: 1.5)),
-        isDense: true,
-      ),
-      tabBarTheme: const TabBarThemeData(
-        dividerColor: Color(0xFF262A38),
-        labelStyle: TextStyle(fontWeight: FontWeight.w600),
-      ),
-    );
-  }
 }
 
 class ConnectScreen extends StatefulWidget {
@@ -247,68 +210,115 @@ class _ConnectScreenState extends State<ConnectScreen>
     ));
   }
 
+  bool _showToken = false;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: LayoutBuilder(builder: (context, box) {
-          final picker = _picker(context);
-          final form = _form(context);
-          // Landscape (how the app runs): servers on the left, form on the right.
-          if (box.maxWidth >= 640) {
+      body: ConsoleBackdrop(
+        child: SafeArea(
+          child: LayoutBuilder(builder: (context, box) {
+            final wide = box.maxWidth >= 640;
             return Padding(
-              padding: const EdgeInsets.fromLTRB(20, 12, 20, 12),
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                _header(context),
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 14),
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                _header(),
                 const SizedBox(height: 12),
                 Expanded(
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                    Expanded(flex: 5, child: picker),
-                    const SizedBox(width: 16),
-                    Expanded(flex: 4, child: SingleChildScrollView(child: form)),
-                  ]),
+                  child: wide
+                      ? Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                          Expanded(flex: 11, child: _picker()),
+                          const SizedBox(width: 16),
+                          Expanded(flex: 9, child: _form(scroll: true)),
+                        ])
+                      : ListView(children: [
+                          SizedBox(height: 300, child: _picker()),
+                          const SizedBox(height: 16),
+                          _form(scroll: false),
+                        ]),
                 ),
               ]),
             );
-          }
-          return ListView(padding: const EdgeInsets.all(16), children: [
-            _header(context),
-            const SizedBox(height: 12),
-            SizedBox(height: 320, child: picker),
-            const SizedBox(height: 16),
-            form,
-          ]);
-        }),
+          }),
+        ),
       ),
     );
   }
 
-  Widget _header(BuildContext context) {
-    final t = Theme.of(context);
+  Widget _header() {
     return Row(children: [
-      Icon(Icons.sports_esports, color: t.colorScheme.primary),
-      const SizedBox(width: 10),
-      Text('XPadLink',
-          style: t.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w700)),
+      ClipRRect(
+        borderRadius: BorderRadius.circular(9),
+        child: Image.asset('assets/logo.png', width: 36, height: 36),
+      ),
+      const SizedBox(width: 12),
+      Text.rich(TextSpan(children: [
+        TextSpan(text: 'XPAD', style: display(20, spacing: 3.2)),
+        TextSpan(text: 'LINK', style: display(20, color: C.lime, spacing: 3.2)),
+      ])),
+      const Spacer(),
+      Container(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        decoration: BoxDecoration(
+          color: C.bg.withAlpha(170),
+          borderRadius: BorderRadius.circular(99),
+          border: Border.all(color: C.line),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: _scanning ? C.cyan : C.lime,
+              boxShadow: [BoxShadow(color: _scanning ? C.cyan : C.lime, blurRadius: 8)],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Eyebrow(_scanning ? 'Scanning' : 'Ready'),
+        ]),
+      ),
     ]);
   }
 
+  BoxDecoration get _panel => BoxDecoration(
+        color: C.panel,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: C.line),
+      );
+
   /// Saved servers, nearby servers on Wi-Fi, paired PCs over Bluetooth.
-  Widget _picker(BuildContext context) {
-    return Card(
+  Widget _picker() {
+    Tab tab(IconData icon, String text) => Tab(
+          height: 42,
+          child: Row(mainAxisSize: MainAxisSize.min, children: [
+            Icon(icon, size: 17),
+            const SizedBox(width: 7),
+            Text(text.toUpperCase()),
+          ]),
+        );
+    return Container(
+      decoration: _panel,
       clipBehavior: Clip.antiAlias,
       child: Column(children: [
-        TabBar(controller: _tabs, tabs: [
-          Tab(
-              height: 44,
-              icon: const Icon(Icons.bookmark_outline, size: 20),
-              text: 'Saved${_saved.isEmpty ? '' : ' (${_saved.length})'}'),
-          const Tab(height: 44, icon: Icon(Icons.wifi, size: 20), text: 'Wi-Fi'),
-          const Tab(
-              height: 44,
-              icon: Icon(Icons.bluetooth, size: 20),
-              text: 'Bluetooth'),
-        ]),
+        TabBar(
+          controller: _tabs,
+          labelColor: C.ink,
+          unselectedLabelColor: C.mute,
+          labelStyle: display(12.5, spacing: 1.4, w: FontWeight.w600),
+          unselectedLabelStyle: display(12.5, spacing: 1.4, w: FontWeight.w600),
+          indicator: const UnderlineTabIndicator(
+              borderSide: BorderSide(color: C.lime, width: 2),
+              insets: EdgeInsets.symmetric(horizontal: 14)),
+          indicatorSize: TabBarIndicatorSize.tab,
+          dividerColor: C.line,
+          overlayColor: WidgetStatePropertyAll(Colors.white.withAlpha(10)),
+          tabs: [
+            tab(Icons.bookmark_outline, 'Saved${_saved.isEmpty ? '' : ' ${_saved.length}'}'),
+            tab(Icons.wifi, 'Wi-Fi'),
+            tab(Icons.bluetooth, 'Bluetooth'),
+          ],
+        ),
         Expanded(
           child: TabBarView(controller: _tabs, children: [
             _savedTab(),
@@ -320,82 +330,89 @@ class _ConnectScreenState extends State<ConnectScreen>
     );
   }
 
-  Widget _hint(String text, {Color? color, Widget? action}) => Center(
+  Widget _hint(String text, {Color color = C.mute, Widget? action}) => Center(
         child: Padding(
           padding: const EdgeInsets.all(20),
           child: Column(mainAxisSize: MainAxisSize.min, children: [
             Text(text,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: color ?? Colors.white54)),
-            if (action != null) ...[const SizedBox(height: 12), action],
+                style: const TextStyle(color: C.mute, height: 1.4).copyWith(color: color)),
+            if (action != null) ...[const SizedBox(height: 14), action],
+          ]),
+        ),
+      );
+
+  Widget _tileList(List<Widget> tiles) => ListView.separated(
+        padding: const EdgeInsets.all(10),
+        itemCount: tiles.length,
+        separatorBuilder: (_, _) => const SizedBox(height: 8),
+        itemBuilder: (_, i) => tiles[i],
+      );
+
+  Widget _listHeader(String title, Widget trailing) => Padding(
+        padding: const EdgeInsets.fromLTRB(16, 10, 6, 0),
+        child: SizedBox(
+          height: 36,
+          child: Row(children: [
+            Expanded(child: Eyebrow(title)),
+            trailing,
           ]),
         ),
       );
 
   Widget _savedTab() {
     if (_saved.isEmpty) {
-      return _hint('No saved servers yet. Find one on Wi-Fi or Bluetooth, '
-          'then press Save.');
+      return _hint('No saved servers yet. Find one on Wi-Fi or Bluetooth, then press Save.');
     }
-    return ListView(padding: const EdgeInsets.symmetric(vertical: 4), children: [
+    return _tileList([
       for (final s in _saved)
-        ListTile(
-          leading: Icon(s.address.startsWith('bt:') ? Icons.bluetooth : Icons.wifi),
-          title: Text(s.label),
-          subtitle: s.label == s.address ? null : Text(s.address),
-          onTap: () => _open(s.address, s.token),
-          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            IconButton(
-              tooltip: 'Edit',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => _edit(s),
-            ),
-            IconButton(
-              tooltip: 'Delete',
-              icon: const Icon(Icons.delete_outline),
-              onPressed: () => _delete(s),
-            ),
-          ]),
+        _ServerTile(
+          bluetooth: s.address.startsWith('bt:'),
+          title: s.label,
+          subtitle: s.address.replaceFirst('bt:', ''),
+          tag: s.address.startsWith('bt:') ? 'BT' : 'WI-FI',
+          selected: _server.text == s.address,
+          onTap: () => _edit(s),
+          trailing: IconButton(
+            tooltip: 'Delete',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.delete_outline, size: 20, color: C.mute),
+            onPressed: () => _delete(s),
+          ),
         ),
     ]);
   }
 
   Widget _wifiTab() {
     return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-        child: Row(children: [
-          Expanded(
-              child: Text(
-                  _scanning ? 'Looking on this network…' : 'Servers on this network',
-                  style: const TextStyle(color: Colors.white54))),
-          if (_scanning)
-            const Padding(
-              padding: EdgeInsets.all(12),
-              child: SizedBox(
-                  width: 16,
-                  height: 16,
-                  child: CircularProgressIndicator(strokeWidth: 2)),
-            )
-          else
-            IconButton(
+      _listHeader(
+        '// On this network',
+        _scanning
+            ? const Padding(
+                padding: EdgeInsets.only(right: 14),
+                child: SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(strokeWidth: 2, color: C.cyan)),
+              )
+            : IconButton(
                 tooltip: 'Scan again',
-                icon: const Icon(Icons.refresh),
+                icon: const Icon(Icons.refresh, size: 20, color: C.mute),
                 onPressed: _scan),
-        ]),
       ),
       Expanded(
         child: _found.isEmpty
             ? _hint(_scanning
-                ? ' '
-                : 'None found. Guest networks block discovery: type the '
-                    'address on the right instead.')
-            : ListView(children: [
+                ? 'Looking for servers on this network…'
+                : 'None found. Guest networks block discovery: type the address on the right instead.')
+            : _tileList([
                 for (final s in _found)
-                  ListTile(
-                    leading: const Icon(Icons.computer),
-                    title: Text(s.hostname),
-                    subtitle: Text(s.address),
+                  _ServerTile(
+                    bluetooth: false,
+                    title: s.hostname,
+                    subtitle: s.address,
+                    tag: 'FOUND',
+                    selected: _server.text == s.address,
                     onTap: () => _pick(s),
                   ),
               ]),
@@ -407,38 +424,34 @@ class _ConnectScreenState extends State<ConnectScreen>
     final paired = _paired;
     if (paired == null) {
       return _hint(
-        _pairedError ?? 'Pair your PC in Android settings first, then list '
-            'the paired devices here.',
-        color: _pairedError == null ? null : Colors.redAccent,
+        _pairedError ?? 'Pair your PC in Android settings first, then list the paired devices here.',
+        color: _pairedError == null ? C.mute : C.b,
         action: FilledButton.tonalIcon(
           onPressed: _loadPaired,
-          icon: const Icon(Icons.bluetooth_searching),
+          icon: const Icon(Icons.bluetooth_searching, size: 18),
           label: const Text('Show paired devices'),
         ),
       );
     }
     return Column(children: [
-      Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 8, 0),
-        child: Row(children: [
-          const Expanded(
-              child: Text('Paired with this phone',
-                  style: TextStyle(color: Colors.white54))),
-          IconButton(
-              tooltip: 'Refresh',
-              icon: const Icon(Icons.refresh),
-              onPressed: _loadPaired),
-        ]),
+      _listHeader(
+        '// Paired with this phone',
+        IconButton(
+            tooltip: 'Refresh',
+            icon: const Icon(Icons.refresh, size: 20, color: C.mute),
+            onPressed: _loadPaired),
       ),
       Expanded(
         child: paired.isEmpty
             ? _hint('No paired devices. Pair your PC in Android settings first.')
-            : ListView(children: [
+            : _tileList([
                 for (final d in paired)
-                  ListTile(
-                    leading: const Icon(Icons.bluetooth),
-                    title: Text(d.name),
-                    subtitle: Text(d.address),
+                  _ServerTile(
+                    bluetooth: true,
+                    title: d.name,
+                    subtitle: d.address,
+                    tag: 'PAIRED',
+                    selected: _server.text == 'bt:${d.address}',
                     onTap: () => _pickPaired(d),
                   ),
               ]),
@@ -446,56 +459,194 @@ class _ConnectScreenState extends State<ConnectScreen>
     ]);
   }
 
-  Widget _form(BuildContext context) {
-    final bt = _server.text.startsWith('bt:');
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          TextField(
-            controller: _label,
-            decoration: const InputDecoration(
-                labelText: 'Label (optional)', hintText: 'Living room PC'),
-          ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _server,
-            keyboardType: TextInputType.url,
-            onChanged: (_) => setState(() {}),
-            decoration: InputDecoration(
-              labelText: 'Server',
-              hintText: '192.168.1.20:9777  or  bt:AA:BB:CC:DD:EE:FF',
-              prefixIcon: Icon(bt ? Icons.bluetooth : Icons.wifi),
+  Widget _field(String label, TextEditingController c,
+      {String? hint, IconData? icon, TextInputType? type, bool secret = false, ValueChanged<String>? onChanged}) {
+    final border = OutlineInputBorder(
+      borderRadius: BorderRadius.circular(10),
+      borderSide: const BorderSide(color: C.line),
+    );
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Eyebrow(label),
+      const SizedBox(height: 4),
+      TextField(
+        controller: c,
+        keyboardType: type,
+        obscureText: secret && !_showToken,
+        onChanged: onChanged,
+        cursorColor: C.lime,
+        style: mono(14, color: C.ink, w: FontWeight.w500),
+        decoration: InputDecoration(
+          isDense: true,
+          filled: true,
+          fillColor: C.bg,
+          hintText: hint,
+          hintStyle: mono(13, color: C.mute.withAlpha(150)),
+          prefixIcon: icon == null ? null : Icon(icon, size: 18, color: C.mute),
+          prefixIconConstraints: const BoxConstraints(minWidth: 40),
+          suffixIcon: !secret
+              ? null
+              : IconButton(
+                  tooltip: _showToken ? 'Hide token' : 'Show token',
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(_showToken ? Icons.visibility_off : Icons.visibility, size: 18, color: C.mute),
+                  onPressed: () => setState(() => _showToken = !_showToken),
+                ),
+          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+          border: border,
+          enabledBorder: border,
+          focusedBorder: border.copyWith(borderSide: const BorderSide(color: C.lime, width: 1.5)),
+        ),
+      ),
+    ]);
+  }
+
+  Widget _form({required bool scroll}) {
+    final fields = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      const Eyebrow('// Selected'),
+      const SizedBox(height: 4),
+      AnimatedBuilder(
+        animation: Listenable.merge([_label, _server]),
+        builder: (context, _) {
+          final addr = _server.text.trim();
+          final title = _label.text.trim().isNotEmpty
+              ? _label.text.trim()
+              : (addr.isEmpty ? 'New server' : (addr.startsWith('bt:') ? 'Bluetooth server' : 'Wi-Fi server'));
+          return Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(22, spacing: .4));
+        },
+      ),
+      const SizedBox(height: 10),
+      _field('Server', _server,
+          hint: '192.168.1.20:9777  or  bt:AA:BB:CC:DD:EE:FF',
+          icon: _server.text.startsWith('bt:') ? Icons.bluetooth : Icons.wifi,
+          type: TextInputType.url,
+          onChanged: (_) => setState(() {})),
+      const SizedBox(height: 10),
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: _field('Token', _token, hint: 'from xpadlinkd', icon: Icons.key, secret: true)),
+        const SizedBox(width: 10),
+        Expanded(child: _field('Device name', _name, icon: Icons.smartphone)),
+      ]),
+      const SizedBox(height: 10),
+      _field('Label (optional)', _label, hint: 'Living room PC'),
+    ]);
+
+    final actions = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [BoxShadow(color: C.lime.withAlpha(60), blurRadius: 22)],
+            ),
+            child: FilledButton.icon(
+              onPressed: _connect,
+              icon: const Icon(Icons.play_arrow_rounded, size: 22),
+              label: Text('CONNECT', style: display(14, color: C.bg, spacing: 2.4)),
+              style: FilledButton.styleFrom(
+                backgroundColor: C.lime,
+                foregroundColor: C.bg,
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
             ),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _token,
-            decoration: const InputDecoration(
-                labelText: 'Token',
-                hintText: 'printed by xpadlinkd',
-                prefixIcon: Icon(Icons.key)),
+        ),
+        const SizedBox(width: 10),
+        OutlinedButton.icon(
+          onPressed: _save,
+          icon: const Icon(Icons.bookmark_add_outlined, size: 18),
+          label: Text('SAVE', style: display(13, spacing: 1.6, w: FontWeight.w600)),
+          style: OutlinedButton.styleFrom(
+            foregroundColor: C.ink,
+            side: const BorderSide(color: C.line),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
           ),
-          const SizedBox(height: 12),
-          TextField(
-            controller: _name,
-            decoration: const InputDecoration(
-                labelText: 'Device name', prefixIcon: Icon(Icons.smartphone)),
-          ),
-          const SizedBox(height: 16),
-          Row(children: [
-            Expanded(
-                child: FilledButton.icon(
-                    onPressed: _connect,
-                    icon: const Icon(Icons.play_arrow),
-                    label: const Text('Connect'))),
+        ),
+      ]),
+      const SizedBox(height: 8),
+      Text(
+        _server.text.startsWith('bt:') ? 'BLUETOOTH · RFCOMM · SLOT AUTO' : 'WI-FI · UDP · SLOT AUTO',
+        style: mono(10, spacing: .8),
+      ),
+    ]);
+
+    return Container(
+      decoration: _panel,
+      padding: const EdgeInsets.all(16),
+      child: scroll
+          ? Column(children: [
+              Expanded(child: SingleChildScrollView(child: fields)),
+              const SizedBox(height: 12),
+              actions,
+            ])
+          : Column(children: [fields, const SizedBox(height: 16), actions]),
+    );
+  }
+}
+
+/// One server in the picker: link icon, name, mono address, tag.
+class _ServerTile extends StatelessWidget {
+  const _ServerTile({
+    required this.bluetooth,
+    required this.title,
+    required this.subtitle,
+    required this.tag,
+    required this.selected,
+    required this.onTap,
+    this.trailing,
+  });
+
+  final bool bluetooth;
+  final String title, subtitle, tag;
+  final bool selected;
+  final VoidCallback onTap;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final radius = BorderRadius.circular(12);
+    return Material(
+      color: C.panel2,
+      shape: RoundedRectangleBorder(
+        borderRadius: radius,
+        side: BorderSide(color: selected ? C.lime : C.line, width: selected ? 1.5 : 1),
+      ),
+      child: InkWell(
+        onTap: onTap,
+        customBorder: RoundedRectangleBorder(borderRadius: radius),
+        child: Container(
+          decoration: selected
+              ? BoxDecoration(
+                  borderRadius: radius,
+                  boxShadow: [BoxShadow(color: C.lime.withAlpha(36), blurRadius: 18)],
+                )
+              : null,
+          padding: const EdgeInsets.fromLTRB(12, 10, 8, 10),
+          child: Row(children: [
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                color: C.bg,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: C.line),
+              ),
+              child: Icon(bluetooth ? Icons.bluetooth : Icons.wifi,
+                  size: 20, color: bluetooth ? C.violetSoft : C.cyan),
+            ),
             const SizedBox(width: 12),
-            OutlinedButton.icon(
-                onPressed: _save,
-                icon: const Icon(Icons.bookmark_add_outlined),
-                label: const Text('Save')),
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, maxLines: 1, overflow: TextOverflow.ellipsis, style: display(16, spacing: .2, w: FontWeight.w600)),
+                Text(subtitle, maxLines: 1, overflow: TextOverflow.ellipsis, style: mono(11.5)),
+              ]),
+            ),
+            const SizedBox(width: 8),
+            Tag(tag, color: bluetooth ? C.violetSoft : C.cyan),
+            ?trailing,
           ]),
-        ]),
+        ),
       ),
     );
   }
@@ -531,6 +682,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   String? _physical; // name of a physical pad once one has sent input
   bool _showOverlay = true;
   String? _error;
+  Timer? _readout; // refreshes the stick values while the touch controls are hidden
 
   @override
   void initState() {
@@ -548,6 +700,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
     _padSub = _channel.receiveBroadcastStream().listen(_onPhysical,
         onError: (Object e) => _log.e('gamepad channel error', e));
     _setMotion(true);
+    _readout = Timer.periodic(const Duration(milliseconds: 120), (_) {
+      if (mounted && !_showOverlay) setState(() {});
+    });
   }
 
   /// Forces the other landscape, for when the system doesn't follow the sensor.
@@ -602,6 +757,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   @override
   void dispose() {
+    _readout?.cancel();
     _padSub?.cancel();
     _motionSub?.cancel();
     _client.onRumble = null;
@@ -614,59 +770,135 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final status = _error ??
-        _client.rejected ??
-        (_client.connected
-            ? 'Player ${_client.slot + 1}'
-                '${_physical != null ? ' · $_physical' : ''}'
-            : 'Connecting to ${widget.host}…');
-
     return Scaffold(
-      backgroundColor: Colors.black,
-      body: SafeArea(
-        child: Stack(children: [
-          if (_showOverlay) OnScreenPad(state: _client.state),
-          Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 8),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(Icons.circle,
-                    size: 10,
-                    color: _client.connected ? Colors.green : Colors.orange),
-                const SizedBox(width: 6),
-                Text(status,
-                    style: TextStyle(
-                        fontSize: 12,
-                        color: (_error != null || _client.rejected != null)
-                            ? Colors.redAccent
-                            : null)),
-                IconButton(
-                  tooltip: 'Toggle touch controls',
-                  icon: Icon(
-                      _showOverlay ? Icons.visibility_off : Icons.visibility),
-                  onPressed: () => setState(() => _showOverlay = !_showOverlay),
+      backgroundColor: C.bg,
+      body: ConsoleBackdrop(
+        child: SafeArea(
+          child: Stack(children: [
+            // Stays mounted while hidden, so a held touch isn't dropped mid-press.
+            Positioned.fill(
+              top: 58,
+              child: IgnorePointer(
+                ignoring: !_showOverlay,
+                child: AnimatedOpacity(
+                  opacity: _showOverlay ? 1 : 0,
+                  duration: const Duration(milliseconds: 250),
+                  child: OnScreenPad(state: _client.state),
                 ),
-                IconButton(
-                  tooltip: _motionOn ? 'Motion on' : 'Motion off',
-                  icon: Icon(_motionOn ? Icons.screen_rotation : Icons.screen_lock_rotation),
-                  onPressed: () => setState(() => _setMotion(!_motionOn)),
-                ),
-                IconButton(
-                  tooltip: 'Flip screen',
-                  icon: const Icon(Icons.flip),
-                  onPressed: _flip,
-                ),
-                IconButton(
-                  tooltip: 'Disconnect',
-                  icon: const Icon(Icons.close),
-                  onPressed: () => Navigator.of(context).pop(),
-                ),
-              ]),
+              ),
             ),
-          ),
-        ]),
+            if (!_showOverlay) Positioned.fill(top: 58, child: _hiddenView()),
+            Positioned(top: 8, left: 12, right: 12, child: _bar()),
+          ]),
+        ),
       ),
     );
   }
+
+  /// Back, player ring, link chip, and the view toggles.
+  Widget _bar() {
+    final up = _client.connected;
+    final problem = _error ?? _client.rejected;
+    return Row(children: [
+      _BackButton(onPressed: () => Navigator.of(context).maybePop()),
+      const SizedBox(width: 12),
+      RingOfLight(slot: _client.slot, live: up),
+      const SizedBox(width: 10),
+      Flexible(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+            Text(
+              up ? 'PLAYER ${_client.slot + 1}' : (problem != null ? 'NOT CONNECTED' : 'CONNECTING'),
+              style: display(15, spacing: 1.8),
+            ),
+            problem != null
+                ? Eyebrow(problem, color: C.b)
+                : Eyebrow(_physical ?? widget.name),
+          ]),
+        ),
+      ),
+      const SizedBox(width: 12),
+      if (up) LinkChip(bluetooth: _client.bluetooth, rttMs: _client.rttMs),
+      const Spacer(),
+      BarButton(
+        icon: _showOverlay ? Icons.visibility_outlined : Icons.visibility_off_outlined,
+        tooltip: 'Toggle touch controls',
+        onPressed: () => setState(() => _showOverlay = !_showOverlay),
+      ),
+      const SizedBox(width: 8),
+      BarButton(
+        icon: Icons.screen_rotation,
+        tooltip: _motionOn ? 'Motion on' : 'Motion off',
+        on: _motionOn,
+        onPressed: () => setState(() => _setMotion(!_motionOn)),
+      ),
+      const SizedBox(width: 8),
+      BarButton(icon: Icons.flip, tooltip: 'Flip screen', onPressed: _flip),
+    ]);
+  }
+
+  /// Shown instead of the touch controls: the logo, which pad is live, and its values.
+  Widget _hiddenView() {
+    final st = _client.state;
+    String axis(String n, int v) => '$n ${v >= 0 ? '+' : '-'}${(v.abs() / 32767).toStringAsFixed(2)}';
+    final values = [
+      axis('LX', st.lx),
+      axis('LY', st.ly),
+      axis('RX', st.rx),
+      axis('RY', st.ry),
+      'LT ${st.lt}',
+      'RT ${st.rt}',
+    ];
+    return Center(
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [BoxShadow(color: C.violet.withAlpha(120), blurRadius: 40)],
+          ),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(24),
+            child: Image.asset('assets/logo.png', width: 84, height: 84),
+          ),
+        ),
+        const SizedBox(height: 14),
+        Text('TOUCH CONTROLS HIDDEN', style: display(16, spacing: 3)),
+        const SizedBox(height: 4),
+        Eyebrow(_physical != null ? 'Physical pad active · $_physical' : 'Tap the eye to show them'),
+        const SizedBox(height: 12),
+        Wrap(spacing: 16, children: [for (final v in values) Text(v, style: mono(12, color: C.ink))]),
+      ]),
+    );
+  }
+}
+
+/// Labelled so it reads as "leave this view", top left where a thumb expects it.
+class _BackButton extends StatelessWidget {
+  const _BackButton({required this.onPressed});
+
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => Material(
+        color: C.panel.withAlpha(204),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: C.line),
+        ),
+        child: InkWell(
+          onTap: onPressed,
+          customBorder: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(8, 0, 14, 0),
+            child: SizedBox(
+              height: 42,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                const Icon(Icons.chevron_left, size: 24, color: C.ink),
+                Text('BACK', style: display(12, spacing: 1.8)),
+              ]),
+            ),
+          ),
+        ),
+      );
 }

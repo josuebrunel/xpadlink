@@ -16,6 +16,12 @@ class PadClient extends ChangeNotifier {
 
   bool connected = false;
 
+  /// Round trip of the last hello and its ack, in ms. Null until measured.
+  int? rttMs;
+
+  /// True when the server is reached over Bluetooth.
+  bool get bluetooth => _btAddress != null;
+
   /// Called when a game asks the controller to vibrate.
   void Function(int strong, int weak, int ms)? onRumble;
 
@@ -147,6 +153,13 @@ class PadClient extends ChangeNotifier {
       if (_lastAck != _epoch && gap > _maxAckGapMs) _maxAckGapMs = gap;
       _acks++;
       _lastAck = now;
+      if (_lastHello != _epoch) {
+        final rtt = now.difference(_lastHello).inMilliseconds;
+        if (rtt >= 0 && rtt < 2000 && rtt != rttMs) {
+          rttMs = rtt;
+          if (!_disposed) notifyListeners();
+        }
+      }
       _reopenAttempts = 0;
       if (rejected != null) {
         rejected = null;
@@ -241,6 +254,7 @@ class PadClient extends ChangeNotifier {
   void _setConnected(bool v, String why) {
     if (connected == v) return;
     connected = v;
+    if (!v) rttMs = null;
     _log.i(v ? 'connected as player ${slot + 1}' : 'disconnected ($why)');
     if (!_disposed) notifyListeners();
   }

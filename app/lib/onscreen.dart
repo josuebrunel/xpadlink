@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'protocol.dart';
+import 'theme.dart';
 
 /// Multi-touch safe: every widget tracks its own pointer with a Listener.
 class HoldButton extends StatefulWidget {
@@ -12,13 +13,21 @@ class HoldButton extends StatefulWidget {
     required this.h,
     this.round = true,
     this.color,
+    this.child,
+    this.fontSize,
   });
 
   final String label;
   final ValueChanged<bool> onChanged;
   final double w, h;
   final bool round;
+
+  /// A face colour fills the button (ABXY). Without one it is a glass key.
   final Color? color;
+
+  /// Replaces the label, for the guide button's logo.
+  final Widget? child;
+  final double? fontSize;
 
   @override
   State<HoldButton> createState() => _HoldButtonState();
@@ -35,25 +44,35 @@ class _HoldButtonState extends State<HoldButton> {
 
   @override
   Widget build(BuildContext context) {
-    final base = widget.color ?? Colors.white;
+    final face = widget.color;
+    final radius = widget.round ? null : BorderRadius.circular(widget.h * 0.34);
     return Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (_) => _set(true),
       onPointerUp: (_) => _set(false),
       onPointerCancel: (_) => _set(false),
-      child: Container(
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 60),
         width: widget.w,
         height: widget.h,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: base.withAlpha(_down ? 230 : 70),
+          color: face != null
+              ? face.withAlpha(_down ? 255 : 215)
+              : (_down ? C.lime.withAlpha(90) : Colors.white.withAlpha(16)),
           shape: widget.round ? BoxShape.circle : BoxShape.rectangle,
-          borderRadius: widget.round ? null : BorderRadius.circular(12),
-          border: Border.all(color: Colors.white54),
+          borderRadius: radius,
+          border: face != null
+              ? null
+              : Border.all(color: _down ? C.lime : Colors.white.withAlpha(68), width: 1.5),
+          boxShadow: face != null
+              ? [BoxShadow(color: face.withAlpha(_down ? 150 : 70), blurRadius: _down ? 22 : 12)]
+              : null,
         ),
-        child: Text(widget.label,
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.bold)),
+        child: widget.child ??
+            Text(widget.label,
+                style: display(widget.fontSize ?? widget.h * 0.34,
+                    color: face != null ? C.bg : C.ink, spacing: 1)),
       ),
     );
   }
@@ -95,6 +114,7 @@ class _StickState extends State<Stick> {
   @override
   Widget build(BuildContext context) {
     final s = widget.size;
+    final held = _pointer != null;
     return Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (e) {
@@ -119,8 +139,11 @@ class _StickState extends State<Stick> {
             child: DecoratedBox(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: Colors.white12,
-                border: Border.all(color: Colors.white38),
+                gradient: const RadialGradient(
+                  center: Alignment(0, -0.2),
+                  colors: [Color(0x14FFFFFF), Color(0x06FFFFFF)],
+                ),
+                border: Border.all(color: held ? C.lime.withAlpha(150) : Colors.white.withAlpha(58), width: 1.5),
               ),
             ),
           ),
@@ -131,7 +154,13 @@ class _StickState extends State<Stick> {
               width: _knobR * 2,
               height: _knobR * 2,
               decoration: BoxDecoration(
-                  shape: BoxShape.circle, color: Colors.white.withAlpha(150)),
+                shape: BoxShape.circle,
+                gradient: const RadialGradient(
+                  center: Alignment(-0.3, -0.4),
+                  colors: [Color(0x66FFFFFF), Color(0x22FFFFFF)],
+                ),
+                border: Border.all(color: held ? C.lime : Colors.white.withAlpha(102), width: 1.5),
+              ),
             ),
           ),
         ]),
@@ -146,11 +175,15 @@ class OnScreenPad extends StatelessWidget {
 
   final PadState state;
 
-  Widget _btn(String label, int bit, double size, {Color? color}) => HoldButton(
+  Widget _btn(String label, int bit, double size,
+          {Color? color, bool round = true, double? w, Widget? child}) =>
+      HoldButton(
         label: label,
-        w: size,
+        w: w ?? size,
         h: size,
+        round: round,
         color: color,
+        child: child,
         onChanged: (d) => state.setButton(bit, d),
       );
 
@@ -192,11 +225,12 @@ class OnScreenPad extends StatelessWidget {
           left: 0,
           right: 0,
           child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            _btn('BK', Btn.back, b * 0.8),
-            const SizedBox(width: 12),
-            _btn('G', Btn.guide, b * 0.8),
-            const SizedBox(width: 12),
-            _btn('ST', Btn.start, b * 0.8),
+            _btn('VIEW', Btn.back, b * 0.5, round: false, w: b * 1.5),
+            const SizedBox(width: 14),
+            _btn('', Btn.guide, b * 0.95,
+                child: ClipOval(child: Image.asset('assets/logo.png', width: b * 0.8, height: b * 0.8))),
+            const SizedBox(width: 14),
+            _btn('MENU', Btn.start, b * 0.5, round: false, w: b * 1.5),
           ]),
         ),
         // Left stick (upper left)
@@ -215,7 +249,7 @@ class OnScreenPad extends StatelessWidget {
         Positioned(
           left: 40 + stick + 12,
           top: h * 0.2 + stick / 2 - b * 0.4,
-          child: _btn('L3', Btn.l3, b * 0.8),
+          child: _btn('L3', Btn.l3, b * 0.5, round: false, w: b * 0.8),
         ),
         // D-pad (lower left)
         Positioned(
@@ -225,10 +259,10 @@ class OnScreenPad extends StatelessWidget {
             width: b * 3,
             height: b * 3,
             child: Stack(children: [
-              Positioned(left: b, top: 0, child: _btn('▲', Btn.dUp, b)),
-              Positioned(left: b, bottom: 0, child: _btn('▼', Btn.dDown, b)),
-              Positioned(left: 0, top: b, child: _btn('◀', Btn.dLeft, b)),
-              Positioned(right: 0, top: b, child: _btn('▶', Btn.dRight, b)),
+              Positioned(left: b, top: 0, child: _btn('▲', Btn.dUp, b, round: false)),
+              Positioned(left: b, bottom: 0, child: _btn('▼', Btn.dDown, b, round: false)),
+              Positioned(left: 0, top: b, child: _btn('◀', Btn.dLeft, b, round: false)),
+              Positioned(right: 0, top: b, child: _btn('▶', Btn.dRight, b, round: false)),
             ]),
           ),
         ),
@@ -243,19 +277,19 @@ class OnScreenPad extends StatelessWidget {
               Positioned(
                   left: b,
                   top: 0,
-                  child: _btn('Y', Btn.y, b, color: Colors.amber)),
+                  child: _btn('Y', Btn.y, b, color: C.y)),
               Positioned(
                   left: b,
                   bottom: 0,
-                  child: _btn('A', Btn.a, b, color: Colors.green)),
+                  child: _btn('A', Btn.a, b, color: C.a)),
               Positioned(
                   left: 0,
                   top: b,
-                  child: _btn('X', Btn.x, b, color: Colors.blue)),
+                  child: _btn('X', Btn.x, b, color: C.x)),
               Positioned(
                   right: 0,
                   top: b,
-                  child: _btn('B', Btn.b, b, color: Colors.red)),
+                  child: _btn('B', Btn.b, b, color: C.b)),
             ]),
           ),
         ),
@@ -275,7 +309,7 @@ class OnScreenPad extends StatelessWidget {
         Positioned(
           right: 40 + stick * 0.35 + stick + 12,
           bottom: 8 + stick / 2 - b * 0.4,
-          child: _btn('R3', Btn.r3, b * 0.8),
+          child: _btn('R3', Btn.r3, b * 0.5, round: false, w: b * 0.8),
         ),
       ]);
     });

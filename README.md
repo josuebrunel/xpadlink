@@ -49,12 +49,12 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 <table>
   <tr>
-    <td><img src="docs/images/app-connect.png" alt="Connect screen"></td>
+    <td><img src="docs/images/app-connect.png" alt="Connect screen with Saved, Wi-Fi and Bluetooth tabs"></td>
     <td><img src="docs/images/app-controller.png" alt="Touch controller"></td>
   </tr>
   <tr>
     <td align="center">Pick a saved server, find your PC on Wi-Fi, or choose a paired one over Bluetooth</td>
-    <td align="center">Touch controls. They hide when a real pad is used</td>
+    <td align="center">Touch controls, with the link and ping on top. Back leaves the view, the eye hides the controls (they hide by themselves when a real pad is used)</td>
   </tr>
   <tr>
     <td><img src="docs/images/hardwaretester.png" alt="Browser gamepad tester showing XPadLink"></td>
@@ -223,8 +223,8 @@ It plays a rumble effect on the virtual pad, the way a game would.
 - CI (`.github/workflows/ci.yml`): tests on Linux, macOS and Windows, builds `xpadlinkd` for
   linux, darwin and windows (amd64, arm64) with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). Pushing a `v*` tag publishes a release with the archives and checksums.
 - Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-- Layout: `server/` Go daemon (`proto`, `hub`, `bt`, `vpad`, `dsu`, `cmd/`), `app/` Flutter code (`lib/`) and Kotlin (`kotlin/`: gamepad and sensors in `MainActivity.kt`, the Bluetooth connection in `BtLink.kt`), copied into a generated project by `app/setup.sh`.
+- Layout: `server/` Go daemon (`proto`, `hub`, `bt`, `vpad`, `dsu`, `cmd/`), `app/` Flutter code (`lib/`: screens in `main.dart` and `onscreen.dart`, colours and shared widgets in `theme.dart`, Wi-Fi and Bluetooth links in `link.dart`) and Kotlin (`kotlin/`: gamepad and sensors in `MainActivity.kt`, the Bluetooth connection in `BtLink.kt`), copied into a generated project by `app/setup.sh`.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). The bundled fonts (Chakra Petch, Barlow, JetBrains Mono) are under the SIL Open Font License, see `app/assets/fonts/`.
