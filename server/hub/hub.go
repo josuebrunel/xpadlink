@@ -15,6 +15,26 @@ import (
 	"xpadlink/vpad"
 )
 
+// Peer identifies a client link: "udp:1.2.3.4:5000" or "bt:AA:BB:CC:DD:EE:FF".
+// A Bluetooth peer is keyed by the device address, so a reconnect finds its session.
+type Peer string
+
+func UDPPeer(a netip.AddrPort) Peer { return Peer("udp:" + a.String()) }
+func BTPeer(mac string) Peer        { return Peer("bt:" + strings.ToUpper(mac)) }
+
+// ip returns the source IP of a UDP peer, false for any other link.
+func (p Peer) ip() (netip.Addr, bool) {
+	rest, ok := strings.CutPrefix(string(p), "udp:")
+	if !ok {
+		return netip.Addr{}, false
+	}
+	ap, err := netip.ParseAddrPort(rest)
+	if err != nil {
+		return netip.Addr{}, false
+	}
+	return ap.Addr().Unmap(), true
+}
+
 type Config struct {
 	Token   string        // shared secret clients must present in hello
 	MaxPads int           // max simultaneous clients
@@ -23,7 +43,7 @@ type Config struct {
 
 	// Send writes a datagram to a client. Needed for rumble, which the server
 	// initiates; it must be safe to call from any goroutine.
-	Send func(to netip.AddrPort, pkt []byte)
+	Send func(to Peer, pkt []byte)
 
 	// Motion, if set, receives every pad update with the latest motion sample.
 	Motion MotionSink
@@ -63,7 +83,7 @@ const discoverMinGap = 200 * time.Millisecond
 
 type Hub struct {
 	cfg          Config
-	sessions     map[netip.AddrPort]*session
+	sessions     map[Peer]*session
 	lastDiscover map[netip.Addr]time.Time
 }
 
@@ -80,13 +100,13 @@ func New(cfg Config) *Hub {
 	cfg.Hostname = clean(cfg.Hostname)
 	return &Hub{
 		cfg:          cfg,
-		sessions:     map[netip.AddrPort]*session{},
+		sessions:     map[Peer]*session{},
 		lastDiscover: map[netip.Addr]time.Time{},
 	}
 }
 
 // Handle processes one datagram and returns an optional reply for the sender.
-func (h *Hub) Handle(pkt []byte, from netip.AddrPort, now time.Time) []byte {
+func (h *Hub) Handle(pkt []byte, from Peer, now time.Time) []byte {
 	if len(pkt) < 2 || pkt[0] != proto.Magic {
 		h.cfg.Log.Debug("ignored packet", "from", from, "len", len(pkt))
 		return nil
@@ -145,8 +165,11 @@ func (h *Hub) pushMotion(s *session, now time.Time) {
 	h.cfg.Motion.Update(s.slot, s.state, m)
 }
 
-func (h *Hub) discover(from netip.AddrPort, now time.Time) []byte {
-	ip := from.Addr().Unmap()
+func (h *Hub) discover(from Peer, now time.Time) []byte {
+	ip, ok := from.ip()
+	if !ok {
+		return nil // discovery is a Wi-Fi broadcast thing
+	}
 	if last, ok := h.lastDiscover[ip]; ok && now.Sub(last) < discoverMinGap {
 		h.cfg.Log.Debug("discover rate limited", "from", from)
 		return nil
@@ -156,7 +179,7 @@ func (h *Hub) discover(from netip.AddrPort, now time.Time) []byte {
 	return proto.MarshalAnnounce(h.cfg.Port, h.cfg.Hostname)
 }
 
-func (h *Hub) hello(pkt []byte, from netip.AddrPort, now time.Time) []byte {
+func (h *Hub) hello(pkt []byte, from Peer, now time.Time) []byte {
 	token, name, err := proto.ParseHello(pkt)
 	if err != nil {
 		h.cfg.Log.Debug("bad hello packet", "from", from, "err", err)
@@ -215,7 +238,7 @@ func (h *Hub) Close() {
 
 func (h *Hub) Len() int { return len(h.sessions) }
 
-func (h *Hub) drop(addr netip.AddrPort, why string) {
+func (h *Hub) drop(addr Peer, why string) {
 	s := h.sessions[addr]
 	if s == nil {
 		return

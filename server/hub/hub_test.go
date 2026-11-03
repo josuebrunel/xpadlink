@@ -32,8 +32,8 @@ func newTestHub(max int) (*Hub, *[]*fakePad) {
 }
 
 var (
-	addrA = netip.MustParseAddrPort("10.0.0.2:5000")
-	addrB = netip.MustParseAddrPort("10.0.0.3:5000")
+	addrA = UDPPeer(netip.MustParseAddrPort("10.0.0.2:5000"))
+	addrB = UDPPeer(netip.MustParseAddrPort("10.0.0.3:5000"))
 	t0    = time.Unix(1000, 0)
 )
 
@@ -144,12 +144,12 @@ func (r *rumblePad) OnRumble(fn func(strong, weak, ms uint16)) { r.fn = fn }
 
 func TestRumbleIsSentToTheClient(t *testing.T) {
 	var pad *rumblePad
-	var sentTo netip.AddrPort
+	var sentTo Peer
 	var sent []byte
 	h := New(Config{
 		Token: "secret", MaxPads: 1, Timeout: time.Second,
 		New:  vpad.Factory(func(string) (vpad.Pad, error) { pad = &rumblePad{}; return pad, nil }),
-		Send: func(to netip.AddrPort, b []byte) { sentTo, sent = to, b },
+		Send: func(to Peer, b []byte) { sentTo, sent = to, b },
 	})
 	h.Handle(proto.MarshalHello("secret", "p"), addrA, t0)
 	if pad == nil || pad.fn == nil {
@@ -195,5 +195,29 @@ func TestMotionForwardedAndExpires(t *testing.T) {
 	h.Close()
 	if len(sink.removed) != 1 || sink.removed[0] != 0 {
 		t.Fatalf("slot not released: %v", sink.removed)
+	}
+}
+
+func TestBluetoothPeerSharesTheHubWithUDP(t *testing.T) {
+	h, pads := newTestHub(2)
+	phone := BTPeer("aa:bb:cc:dd:ee:ff")
+	if phone != BTPeer("AA:BB:CC:DD:EE:FF") {
+		t.Fatalf("peer key must not depend on MAC case: %q", phone)
+	}
+	h.Handle(proto.MarshalHello("secret", "wifi"), addrA, t0)
+	r := h.Handle(proto.MarshalHello("secret", "bt"), phone, t0)
+	if len(r) != 3 || r[1] != proto.TypeAck || r[2] != 1 {
+		t.Fatalf("bt client must get the next slot: %v", r)
+	}
+	h.Handle(proto.State{Seq: 1, LX: 42}.Marshal(), phone, t0)
+	if u := (*pads)[1].updates; len(u) != 1 || u[0].LX != 42 {
+		t.Fatalf("bt state not applied to its own pad: %+v", u)
+	}
+}
+
+func TestDiscoverIsIgnoredOverBluetooth(t *testing.T) {
+	h, _ := newTestHub(1)
+	if r := h.Handle(proto.MarshalDiscover(), BTPeer("AA:BB:CC:DD:EE:FF"), t0); r != nil {
+		t.Fatalf("discover over bt must not be answered: %v", r)
 	}
 }

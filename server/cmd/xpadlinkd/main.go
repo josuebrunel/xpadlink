@@ -1,5 +1,5 @@
-// xpadlinkd receives controller state over UDP and exposes each client as a
-// virtual gamepad through /dev/uinput.
+// xpadlinkd receives controller state over UDP or Bluetooth and exposes each
+// client as a virtual gamepad through /dev/uinput.
 package main
 
 import (
@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"xpadlink/bt"
 	"xpadlink/dsu"
 	"xpadlink/hub"
 	"xpadlink/vpad"
@@ -36,6 +37,7 @@ func main() {
 	maxPads := flag.Int("max", 4, "max simultaneous controllers")
 	timeout := flag.Duration("timeout", 3*time.Second, "drop a client after this much silence")
 	dsuAddr := flag.String("dsu", "127.0.0.1:26760", "Cemuhook DSU address serving phone motion to Cemu (empty to disable)")
+	useBT := flag.Bool("bt", true, "accept phones over Bluetooth (Linux, needs bluetoothd)")
 	dry := flag.Bool("dry", false, "log input instead of creating uinput devices")
 	level := flag.String("log-level", "", "debug, info, warn or error (default info, debug with -dry)")
 	flag.Parse()
@@ -91,39 +93,94 @@ func main() {
 	}
 
 	host, _ := os.Hostname()
+	in := make(chan inbound, 256)
+	var btl *bt.Listener
 	h := hub.New(hub.Config{
 		Motion: sink,
 		Token:  *token, MaxPads: *maxPads, Timeout: *timeout,
 		New: factory, Log: log,
 		Port: uint16(addr.Port), Hostname: host,
-		Send: func(to netip.AddrPort, pkt []byte) { conn.WriteToUDPAddrPort(pkt, to) },
+		Send: func(to hub.Peer, pkt []byte) { send(conn, btl, to, pkt) },
 	})
 	defer h.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	go func() { <-ctx.Done(); conn.Close() }()
 
+	if *useBT {
+		l, err := bt.Listen(log, func(mac string, pkt []byte) {
+			select {
+			case in <- inbound{pkt, hub.BTPeer(mac)}:
+			case <-ctx.Done():
+			}
+		})
+		if err != nil {
+			log.Warn("bluetooth disabled", "err", err)
+		} else {
+			btl = l
+			defer l.Close()
+			log.Info("bluetooth listening", "uuid", bt.ServiceUUID)
+		}
+	}
+
+	go readUDP(ctx, conn, in)
+
+	tick := time.NewTicker(500 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case m := <-in:
+			now := time.Now()
+			if reply := h.Handle(m.pkt, m.from, now); reply != nil {
+				send(conn, btl, m.from, reply)
+			}
+			h.Reap(now)
+		case now := <-tick.C:
+			h.Reap(now)
+		}
+	}
+}
+
+// inbound is one packet from any link. Only the main goroutine drives the hub.
+type inbound struct {
+	pkt  []byte
+	from hub.Peer
+}
+
+// readUDP feeds datagrams to in until ctx ends.
+func readUDP(ctx context.Context, conn *net.UDPConn, in chan<- inbound) {
+	go func() { <-ctx.Done(); conn.Close() }()
 	buf := make([]byte, 512)
 	for {
-		conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 		n, from, err := conn.ReadFromUDPAddrPort(buf)
-		now := time.Now()
 		if err != nil {
 			if errors.Is(err, net.ErrClosed) {
 				return
 			}
-			var ne net.Error
-			if !errors.As(err, &ne) || !ne.Timeout() {
-				log.Error("read failed", "err", err)
-			}
-			h.Reap(now)
+			slog.Error("read failed", "err", err)
 			continue
 		}
-		if reply := h.Handle(buf[:n], from, now); reply != nil {
-			conn.WriteToUDPAddrPort(reply, from)
+		select {
+		case in <- inbound{append([]byte(nil), buf[:n]...), hub.UDPPeer(from)}:
+		case <-ctx.Done():
+			return
 		}
-		h.Reap(now)
+	}
+}
+
+// send routes a packet to a peer by link. Safe to call from any goroutine.
+func send(conn *net.UDPConn, btl *bt.Listener, to hub.Peer, pkt []byte) {
+	switch link, addr, _ := strings.Cut(string(to), ":"); link {
+	case "udp":
+		if ap, err := netip.ParseAddrPort(addr); err == nil {
+			conn.WriteToUDPAddrPort(pkt, ap)
+		}
+	case "bt":
+		if btl != nil {
+			btl.Send(addr, pkt)
+		}
 	}
 }
 
