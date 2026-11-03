@@ -55,7 +55,6 @@ class BtLink(
         val adapter = BluetoothAdapter.getDefaultAdapter() ?: throw IOException("No Bluetooth adapter")
         if (!adapter.isEnabled) throw IOException("Bluetooth is off")
         val device = adapter.getRemoteDevice(address)
-        adapter.cancelDiscovery() // discovery slows a connect down a lot
         val s = device.createRfcommSocketToServiceRecord(SERVICE)
         try {
             s.connect()

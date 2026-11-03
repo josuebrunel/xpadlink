@@ -15,6 +15,22 @@ import (
 
 const profilePath = dbus.ObjectPath("/xpadlink/profile")
 
+// channel is the RFCOMM channel in the SDP record. The phone finds it by UUID.
+const channel = 22
+
+// sdpRecord is published by hand: BlueZ doesn't build a record for a custom UUID,
+// and without one the phone's service lookup fails.
+var sdpRecord = fmt.Sprintf(`<?xml version="1.0" encoding="UTF-8" ?>
+<record>
+  <attribute id="0x0001"><sequence><uuid value="%s"/></sequence></attribute>
+  <attribute id="0x0004"><sequence>
+    <sequence><uuid value="0x0100"/></sequence>
+    <sequence><uuid value="0x0003"/><uint8 value="%d"/></sequence>
+  </sequence></attribute>
+  <attribute id="0x0005"><sequence><uuid value="0x1002"/></sequence></attribute>
+  <attribute id="0x0100"><text value="XPadLink"/></attribute>
+</record>`, ServiceUUID, channel)
+
 // writeTimeout bounds a send so a stalled link can't block the hub.
 const writeTimeout = 200 * time.Millisecond
 
@@ -49,8 +65,10 @@ func Listen(log *slog.Logger, on Handler) (*Listener, error) {
 		return nil, fmt.Errorf("export profile: %w", err)
 	}
 	opts := map[string]dbus.Variant{
-		"Name": dbus.MakeVariant("XPadLink"),
-		"Role": dbus.MakeVariant("server"),
+		"Name":          dbus.MakeVariant("XPadLink"),
+		"Role":          dbus.MakeVariant("server"),
+		"Channel":       dbus.MakeVariant(uint16(channel)),
+		"ServiceRecord": dbus.MakeVariant(sdpRecord),
 		// Pairing is required. Authorization is not: it would make BlueZ ask a
 		// desktop agent on every connection, and the connect fails if nobody answers.
 		"RequireAuthentication": dbus.MakeVariant(true),
