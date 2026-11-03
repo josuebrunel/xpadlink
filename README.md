@@ -37,8 +37,8 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 - A virtual Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
 - Touch controls on the phone, or a real controller plugged into it.
-- The app finds your PC on Wi-Fi by itself. No typing an IP.
 - Over Wi-Fi, or over Bluetooth when there is no shared network.
+- The app finds your PC on Wi-Fi by itself. No typing an IP.
 - Up to 4 phones at once, one virtual pad each.
 - A token keeps other people on your network from sending input.
 - Vibration: a game's rumble buzzes the phone, or a controller with motors.
@@ -49,11 +49,11 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 <table>
   <tr>
-    <td><img src="docs/images/app-connect.png" alt="Connect screen with saved and nearby servers"></td>
+    <td><img src="docs/images/app-connect.png" alt="Connect screen"></td>
     <td><img src="docs/images/app-controller.png" alt="Touch controller"></td>
   </tr>
   <tr>
-    <td align="center">Find your PC on Wi-Fi, or pick a saved server</td>
+    <td align="center">Pick a saved server, find your PC on Wi-Fi, or choose a paired one over Bluetooth</td>
     <td align="center">Touch controls. They hide when a real pad is used</td>
   </tr>
   <tr>
@@ -107,8 +107,8 @@ make app-run          # builds and runs on the connected phone
 
 ### 3. Play
 
-1. Open the app. Servers on your Wi-Fi appear under **Nearby servers**.
-2. Tap yours, enter the token, press **Connect**. **Save** keeps it for next time.
+1. Open the app. The connect screen has three tabs: **Saved**, **Wi-Fi** and **Bluetooth**. Servers on your Wi-Fi appear under the **Wi-Fi** tab.
+2. Tap yours, enter the token, press **Connect**. **Save** keeps it for next time, and it then shows up under **Saved**. No Wi-Fi? See [Bluetooth](#bluetooth).
 3. Use the touch controls, or plug in a controller. The touch controls hide when a controller is used.
 
 Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
@@ -122,15 +122,16 @@ The phone can reach the PC over Bluetooth instead of Wi-Fi. Wi-Fi and Bluetooth 
 
 1. Pair the phone with the PC once, in the Bluetooth settings of both.
 2. Start `xpadlinkd`. It logs `bluetooth listening` (turn it off with `-bt=false`).
-3. In the app, press **Show paired devices** (Android 12 and later asks for the Bluetooth permission), tap your PC, enter the token, press **Connect**. **Save** keeps it.
+3. In the app, open the **Bluetooth** tab and press **Show paired devices** (Android 12 and later asks for the Bluetooth permission). Tap your PC, enter the token, press **Connect**. **Save** keeps it under **Saved**.
 
 Same controls, vibration and motion as on Wi-Fi. If the connect fails, run `bluetoothctl trust <phone-address>` on the PC, and check that `bluetoothctl show` says `Powered: yes`.
+If the PC doesn't show up when you pair from the phone, run `bluetoothctl pairable on` and `bluetoothctl discoverable on` on the PC first, or start the pairing from the PC.
 
 ## Vibration and motion
 
 ### Vibration
 
-A game's rumble goes to the phone, or to your controller if it has motors. Nothing to set up.
+A game's rumble goes to the phone, or to your controller if it has motors. Nothing to set up. It is sent as media vibration, so it works even when "touch vibration" is off in the phone settings.
 Check it without a game: connect the phone, then run `go run ./cmd/xpadrumble` in `server/`.
 
 ### Motion (gyro) in Cemu
@@ -171,7 +172,7 @@ The token is saved once and reused, so the phone never needs a new one.
 |---------|-----|
 | App says **Wrong token** | Run `xpadlinkd token` and re-enter it |
 | App says **Server full** | Raise `-max`, or disconnect another phone |
-| No servers under Nearby | Same Wi-Fi subnet? Guest networks block it. Type `ip:9777` instead. Check the firewall for UDP 9777 |
+| No servers under the Wi-Fi tab | Same Wi-Fi subnet? Guest networks block it. Type `ip:9777` instead. Check the firewall for UDP 9777 |
 | `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
 | Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
 | Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
@@ -222,7 +223,7 @@ It plays a rumble effect on the virtual pad, the way a game would.
 - CI (`.github/workflows/ci.yml`): tests on Linux, macOS and Windows, builds `xpadlinkd` for
   linux, darwin and windows (amd64, arm64) with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). Pushing a `v*` tag publishes a release with the archives and checksums.
 - Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
-- Layout: `server/` Go daemon (`proto`, `hub`, `vpad`, `dsu`, `cmd/`), `app/` Flutter code, copied into a generated project by `app/setup.sh`.
+- Layout: `server/` Go daemon (`proto`, `hub`, `bt`, `vpad`, `dsu`, `cmd/`), `app/` Flutter code (`lib/`) and Kotlin (`kotlin/`: gamepad and sensors in `MainActivity.kt`, the Bluetooth connection in `BtLink.kt`), copied into a generated project by `app/setup.sh`.
 
 ## License
 

@@ -44,7 +44,7 @@ The server republishes them over the Cemuhook DSU protocol (UDP `127.0.0.1:26760
 ## Bluetooth
 
 The same packets also travel over a Bluetooth Classic RFCOMM stream, for phones that have no shared Wi-Fi with the PC.
-The PC (Linux, BlueZ) registers a server profile with service UUID `6f1d8a52-3c1e-4b7a-9e0d-5a7c2f4b8d11`, so the phone finds the channel by UUID. The phone must be paired with the PC first, in the system settings.
+The PC (Linux, BlueZ) registers a server profile with service UUID `6f1d8a52-3c1e-4b7a-9e0d-5a7c2f4b8d11`, so the phone finds the channel by UUID. The SDP record is published by hand on RFCOMM channel 22, because BlueZ builds no record for a custom UUID and the phone's lookup would fail. The phone must be paired with the PC first, in the system settings.
 
 A stream has no packet boundaries, so each packet is prefixed with its length as a u16. A length of 0 or above 512 is invalid: close the connection.
 
