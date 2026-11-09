@@ -6,6 +6,7 @@ cd "$(dirname "$0")"
 flutter create --org com.example --project-name xpadlink --platforms android xpadlink_app
 rm -f xpadlink_app/test/widget_test.dart  # references the default MyApp
 cp lib/*.dart xpadlink_app/lib/
+cp test/*.dart xpadlink_app/test/
 cp kotlin/*.kt xpadlink_app/android/app/src/main/kotlin/com/example/xpadlink/
 
 # Release builds need the INTERNET permission (flutter create only adds it for debug).

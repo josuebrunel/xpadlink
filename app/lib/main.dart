@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'calibration.dart';
 import 'client.dart';
 import 'discovery.dart';
 import 'link.dart';
@@ -680,6 +681,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
   bool _motionOn = true;
   bool _flipped = false; // landscape right instead of left
   String? _physical; // name of a physical pad once one has sent input
+  final _calStore = CalibrationStore();
+  PadCalibration _padCal = PadCalibration();
+  MotionCalibration _motionCal = MotionCalibration();
   bool _showOverlay = true;
   String? _error;
   Timer? _readout; // refreshes the stick values while the touch controls are hidden
@@ -699,6 +703,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
     });
     _padSub = _channel.receiveBroadcastStream().listen(_onPhysical,
         onError: (Object e) => _log.e('gamepad channel error', e));
+    _calStore.loadMotion().then((c) => _motionCal = c);
     _setMotion(true);
     _readout = Timer.periodic(const Duration(milliseconds: 120), (_) {
       if (mounted && !_showOverlay) setState(() {});
@@ -725,8 +730,23 @@ class _ControllerScreenState extends State<ControllerScreen> {
     }
     _motionSub = _motionChannel.receiveBroadcastStream().listen((dynamic e) {
       final v = (e as List).cast<double>();
-      _client.setMotion(PadMotion(v.sublist(0, 3), v.sublist(3, 6)));
+      _client.setMotion(_motionCal.apply(PadMotion(v.sublist(0, 3), v.sublist(3, 6))));
     }, onError: (Object e) => _log.e('motion channel error', e));
+  }
+
+  Future<void> _loadPadCal(String name) async {
+    final c = await _calStore.loadPad(name);
+    if (mounted && _physical == name) _padCal = c;
+  }
+
+  Future<void> _openCalibration() async {
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+      builder: (_) => CalibrationScreen(padName: _physical),
+    ));
+    // Pick up whatever was saved while the screen was open.
+    _motionCal = await _calStore.loadMotion();
+    final name = _physical;
+    if (name != null) _padCal = await _calStore.loadPad(name);
   }
 
   void _onRumble(int strong, int weak, int ms) {
@@ -739,15 +759,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
     final m = Map<String, dynamic>.from(event as Map);
     final s = _client.state;
     s.buttons = m['buttons'] as int;
-    s.lx = m['lx'] as int;
-    s.ly = m['ly'] as int;
-    s.rx = m['rx'] as int;
-    s.ry = m['ry'] as int;
-    s.lt = m['lt'] as int;
-    s.rt = m['rt'] as int;
+    s.lx = _padCal.lx(m['lx'] as int);
+    s.ly = _padCal.ly(m['ly'] as int);
+    s.rx = _padCal.rx(m['rx'] as int);
+    s.ry = _padCal.ry(m['ry'] as int);
+    s.lt = _padCal.lt(m['lt'] as int);
+    s.rt = _padCal.rt(m['rt'] as int);
     final name = m['name'] as String;
     if (_physical != name) {
       _log.i('physical pad active: $name');
+      _loadPadCal(name);
       setState(() {
         _physical = name;
         _showOverlay = false; // physical pad in use: hide touch controls
@@ -833,6 +854,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
         on: _motionOn,
         onPressed: () => setState(() => _setMotion(!_motionOn)),
       ),
+      const SizedBox(width: 8),
+      BarButton(icon: Icons.tune, tooltip: 'Calibrate', onPressed: _openCalibration),
       const SizedBox(width: 8),
       BarButton(icon: Icons.flip, tooltip: 'Flip screen', onPressed: _flip),
     ]);

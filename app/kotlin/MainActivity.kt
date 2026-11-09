@@ -513,11 +513,11 @@ class MainActivity : FlutterActivity() {
         }
         noteDevice(e)
         padDeviceId = e.deviceId
-        lx = deadzone(e.getAxisValue(MotionEvent.AXIS_X))
-        ly = deadzone(e.getAxisValue(MotionEvent.AXIS_Y))
+        lx = e.getAxisValue(MotionEvent.AXIS_X)
+        ly = e.getAxisValue(MotionEvent.AXIS_Y)
         // Xbox and PS4 pads on Android: right stick is Z/RZ, triggers are LTRIGGER/RTRIGGER.
-        rx = deadzone(e.getAxisValue(MotionEvent.AXIS_Z))
-        ry = deadzone(e.getAxisValue(MotionEvent.AXIS_RZ))
+        rx = e.getAxisValue(MotionEvent.AXIS_Z)
+        ry = e.getAxisValue(MotionEvent.AXIS_RZ)
         ltAxis = max(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
         rtAxis = max(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
         ltHasAxis = hasAxis(e, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE)
@@ -534,8 +534,6 @@ class MainActivity : FlutterActivity() {
         emit()
         return true
     }
-
-    private fun deadzone(v: Float) = if (abs(v) < 0.08f) 0f else v
 
     private fun i16(v: Float) = (v.coerceIn(-1f, 1f) * 32767f).toInt()
 
