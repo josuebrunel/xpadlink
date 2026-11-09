@@ -24,6 +24,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 - [Vibration and motion](#vibration-and-motion)
   - [Vibration](#vibration)
   - [Motion (gyro) in Cemu](#motion-gyro-in-cemu)
+- [Calibration](#calibration)
 - [Run in the background](#run-in-the-background)
 - [Troubleshooting](#troubleshooting)
 - [Reference](#reference)
@@ -42,6 +43,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 - Up to 4 phones at once, one virtual pad each.
 - A token keeps other people on your network from sending input.
 - Vibration: a game's rumble buzzes the phone, or a controller with motors.
+- Calibration for analog triggers (Hall effect pads), stick center and deadzone, and the phone's gyro.
 - Motion for Cemu (experimental): the phone's tilt, for Wii U GamePad games.
 - Runs as a background service on Linux, macOS and Windows.
 
@@ -120,7 +122,7 @@ make app-run          # builds and runs on the connected phone
 Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
 <https://hardwaretester.com/gamepad>.
 
-In the app's bottom bar: the eye hides the touch controls, the rotation icon turns motion on or off, and the flip icon turns the screen upside down if it ended up the wrong way.
+In the app's top bar: the eye hides the touch controls, the rotation icon turns motion on or off, the tune icon opens [calibration](#calibration), and the flip icon turns the screen upside down if it ended up the wrong way.
 
 ## Bluetooth
 
@@ -153,6 +155,19 @@ No gyroscope on the phone? Many budget phones have none. The app then derives th
 On such a phone the BOTW maze shrine is not working yet (see [Known gaps](#known-gaps)).
 Use `-dsu ""` to turn the motion server off.
 
+## Calibration
+
+Open it with the tune icon in the controller screen's top bar. It has three tabs, and each one has its own **Save** and **Reset**.
+Values are stored on the phone, per controller name, and applied in the app before anything is sent. The server and the wire format don't change.
+
+- **Triggers.** Pull both triggers all the way, then let go. The app learns the lowest and highest value your pad reports and rescales that range to 0..255. This matters for Hall effect triggers, which rarely reach 100%, and for racing games that use them as throttle and brake. **Start over** clears the readings if you pulled badly.
+- **Sticks.** With both sticks at rest, press **Set center**, then spin each stick around the edge. The app saves the resting center and how far each axis reaches. The deadzone slider (8% by default) is applied after that.
+- **Motion.** Lay the phone flat and still, then press **Measure gyro**. Two seconds of readings become the gyro zero point, so the cursor stops drifting. If tilting the phone left moves the cursor right in Cemu, switch on **Flip roll**. Motion settings belong to the phone, not to a controller.
+
+Triggers and sticks need a physical controller that has sent some input. Press a button first. The touch controls are not calibrated.
+
+A pad that reports an analog trigger axis is read as analog. The L2/R2 key is only used as an on/off fallback for pads with no analog trigger axis.
+
 ## Run in the background
 
 `xpadlinkd install` registers a per-user service that starts at login and restarts on failure.
@@ -182,9 +197,11 @@ The token is saved once and reused, so the phone never needs a new one.
 | `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
 | Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
 | Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
+| Triggers act like on/off buttons | Open Calibration, pull each trigger fully on the **Triggers** tab and save. If it still jumps to full, open an issue with the controller model and the app log |
+| Stick drifts or never reaches full | Calibrate it on the **Sticks** tab, or raise the deadzone |
 | Screen is upside down | Press the flip icon in the app's bottom bar |
 | Cemu shows no motion | `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the daemon log should say `dsu: client subscribed` once the DSUController is added. `motion unavailable` in the app log means the phone has no gyroscope and no rotation vector sensor. Check the rotation icon is on |
-| Motion is wrong in a game | Press **Calibrate** in Cemu with the phone held steady. Open an issue with the game and what happens |
+| Motion is wrong in a game | Press **Calibrate** in Cemu with the phone held steady. In the app, measure the gyro on the **Motion** tab, and try **Flip roll** if left and right are swapped. Open an issue with the game and what happens |
 | Bluetooth connect fails | Pair first. Then `bluetoothctl trust <phone-address>`. `xpadlinkd` must log `bluetooth listening`; if it says `bluetooth disabled`, `bluetoothd` is not running |
 | Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
 
@@ -213,6 +230,7 @@ Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token
 - Motion is experimental. It reaches Cemu, but in the BOTW maze shrine the maze still flips upside down (tested on a phone without a gyroscope, #32). It is only wired to Cemu (DSU).
 - Wi-Fi is LAN only with no encryption: the token only stops other people on the network from injecting input. Bluetooth needs pairing, and the link is encrypted by Bluetooth itself.
 - Bluetooth is Linux only, and untested with more than one phone at once.
+- Calibration covers physical controllers only, and it has no screenshots in this README yet.
 - Controllers that put the right stick on RX/RY instead of Z/RZ need a small change in `app/kotlin/MainActivity.kt`.
 
 ## Development
