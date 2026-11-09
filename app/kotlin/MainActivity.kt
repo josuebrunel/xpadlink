@@ -84,6 +84,8 @@ class MainActivity : FlutterActivity() {
     private var ltAxis = 0f
     private var rtAxis = 0f
     private var ltKey = false
+    private var ltHasAxis = false
+    private var rtHasAxis = false
     private var rtKey = false
     private var deviceName = "gamepad"
 
@@ -518,6 +520,8 @@ class MainActivity : FlutterActivity() {
         ry = deadzone(e.getAxisValue(MotionEvent.AXIS_RZ))
         ltAxis = max(e.getAxisValue(MotionEvent.AXIS_LTRIGGER), e.getAxisValue(MotionEvent.AXIS_BRAKE))
         rtAxis = max(e.getAxisValue(MotionEvent.AXIS_RTRIGGER), e.getAxisValue(MotionEvent.AXIS_GAS))
+        ltHasAxis = hasAxis(e, MotionEvent.AXIS_LTRIGGER, MotionEvent.AXIS_BRAKE)
+        rtHasAxis = hasAxis(e, MotionEvent.AXIS_RTRIGGER, MotionEvent.AXIS_GAS)
 
         val hx = e.getAxisValue(MotionEvent.AXIS_HAT_X)
         val hy = e.getAxisValue(MotionEvent.AXIS_HAT_Y)
@@ -535,8 +539,15 @@ class MainActivity : FlutterActivity() {
 
     private fun i16(v: Float) = (v.coerceIn(-1f, 1f) * 32767f).toInt()
 
-    private fun trigger(axis: Float, key: Boolean) =
-        max((axis.coerceIn(0f, 1f) * 255f).toInt(), if (key) 255 else 0)
+    private fun hasAxis(e: MotionEvent, vararg axes: Int) =
+        axes.any { e.device?.getMotionRange(it, e.source) != null }
+
+    // The L2/R2 key is only a fallback for pads with no analog axis. Pads with
+    // analog (Hall effect) triggers can also send the key at a small pull, which
+    // would pin the trigger to full.
+    private fun trigger(axis: Float, key: Boolean, hasAxis: Boolean) =
+        if (hasAxis) (axis.coerceIn(0f, 1f) * 255f).toInt()
+        else if (key) 255 else (axis.coerceIn(0f, 1f) * 255f).toInt()
 
     private fun emit() {
         val s = sink
@@ -552,8 +563,8 @@ class MainActivity : FlutterActivity() {
                 "ly" to i16(ly),
                 "rx" to i16(rx),
                 "ry" to i16(ry),
-                "lt" to trigger(ltAxis, ltKey),
-                "rt" to trigger(rtAxis, rtKey),
+                "lt" to trigger(ltAxis, ltKey, ltHasAxis),
+                "rt" to trigger(rtAxis, rtKey, rtHasAxis),
             )
         )
     }
