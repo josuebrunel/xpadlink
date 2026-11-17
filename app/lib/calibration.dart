@@ -77,32 +77,73 @@ class PadCalibration {
   }
 }
 
-/// Gyro zero point and the roll direction, for the phone's own sensors.
+/// Gyro zero point, axis orientations, sensitivity, and fallback settings.
 class MotionCalibration {
-  MotionCalibration({List<double>? gyroBias, this.flipRoll = false})
-      : gyroBias = gyroBias ?? [0, 0, 0];
+  MotionCalibration({
+    List<double>? gyroBias,
+    this.flipRoll = false,
+    this.invertPitch = false,
+    this.invertYaw = false,
+    this.invertRoll = false,
+    this.sensitivity = 1.0,
+    this.useAccelFallback = false,
+  }) : gyroBias = gyroBias ?? [0, 0, 0];
 
   List<double> gyroBias; // deg/s
-  bool flipRoll;
+  bool flipRoll; // legacy alias for invertRoll
+  bool invertPitch; // forward/backward tilt
+  bool invertYaw; // left/right turn
+  bool invertRoll; // left/right tilt (roll)
+  double sensitivity; // multiplier (0.5 to 3.0)
+  bool useAccelFallback; // use rotation-vector / accelerometer fallback if gyro unavailable
 
-  /// Cemu reads roll mirrored on some setups: negate accel x and gyro z (the axis
-  /// toward the player) to flip left and right.
+  /// Applies bias, sensitivity, and axis inversions for Cemu and BotW shrines.
   PadMotion apply(PadMotion m) {
     final a = List<double>.of(m.accel);
-    final g = [for (var i = 0; i < 3; i++) m.gyro[i] - gyroBias[i]];
-    if (flipRoll) {
+    final g = [
+      for (var i = 0; i < 3; i++)
+        ((m.gyro[i] - gyroBias[i]) * sensitivity).clamp(-2000.0, 2000.0)
+    ];
+
+    if (invertPitch) {
+      a[1] = -a[1];
+      g[0] = -g[0];
+    }
+    if (invertYaw) {
+      g[1] = -g[1];
+    }
+    if (invertRoll || flipRoll) {
       a[0] = -a[0];
       g[2] = -g[2];
     }
     return PadMotion(a, g);
   }
 
-  Map<String, dynamic> toJson() => {'gyroBias': gyroBias, 'flipRoll': flipRoll};
+  Map<String, dynamic> toJson() => {
+        'gyroBias': gyroBias,
+        'flipRoll': flipRoll || invertRoll,
+        'invertPitch': invertPitch,
+        'invertYaw': invertYaw,
+        'invertRoll': invertRoll || flipRoll,
+        'sensitivity': sensitivity,
+        'useAccelFallback': useAccelFallback,
+      };
 
-  factory MotionCalibration.fromJson(Map<String, dynamic> j) => MotionCalibration(
-        gyroBias: (j['gyroBias'] as List?)?.map((e) => (e as num).toDouble()).toList(),
-        flipRoll: (j['flipRoll'] as bool?) ?? false,
-      );
+  factory MotionCalibration.fromJson(Map<String, dynamic> j) {
+    final fr = (j['flipRoll'] as bool?) ?? false;
+    final ir = (j['invertRoll'] as bool?) ?? fr;
+    return MotionCalibration(
+      gyroBias: (j['gyroBias'] as List?)
+          ?.map((e) => (e as num).toDouble())
+          .toList(),
+      flipRoll: fr || ir,
+      invertPitch: (j['invertPitch'] as bool?) ?? false,
+      invertYaw: (j['invertYaw'] as bool?) ?? false,
+      invertRoll: ir,
+      sensitivity: (j['sensitivity'] as num?)?.toDouble() ?? 1.0,
+      useAccelFallback: (j['useAccelFallback'] as bool?) ?? false,
+    );
+  }
 }
 
 /// Calibration lives on the phone: one entry per pad name, one for the phone's motion.
@@ -626,47 +667,103 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   Widget _motionTab() {
     final b = _motion.gyroBias;
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('Lay the phone flat and keep it still', style: display(18)),
-      const SizedBox(height: 4),
-      Text('Two seconds of readings set the gyro zero point, so the cursor stops drifting.', style: mono(12)),
-      const SizedBox(height: 12),
-      _card([
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Gyro bias', style: display(14)),
-          Text('${b[0].toStringAsFixed(3)}  ${b[1].toStringAsFixed(3)}  ${b[2].toStringAsFixed(3)}',
-              style: mono(12, color: C.ink)),
-        ]),
-        ClipRRect(
-          borderRadius: BorderRadius.circular(8),
-          child: LinearProgressIndicator(
-            value: _sampling ? _sampleProgress : 0,
-            minHeight: 12,
-            color: C.cyan,
-            backgroundColor: C.panel2,
+        Text('Motion & Gyroscope Settings', style: display(18)),
+        const SizedBox(height: 4),
+        Text('Configure gyro zero-point drift, BotW apparatus shrine axes, and sensor fallback.', style: mono(12)),
+        const SizedBox(height: 12),
+        _card([
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Gyro bias', style: display(14)),
+            Text('${b[0].toStringAsFixed(3)}  ${b[1].toStringAsFixed(3)}  ${b[2].toStringAsFixed(3)}',
+                style: mono(12, color: C.ink)),
+          ]),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: _sampling ? _sampleProgress : 0,
+              minHeight: 12,
+              color: C.cyan,
+              backgroundColor: C.panel2,
+            ),
           ),
-        ),
-        Text('Live gyro  ${_gyro[0].toStringAsFixed(2)}  ${_gyro[1].toStringAsFixed(2)}  ${_gyro[2].toStringAsFixed(2)} deg/s',
-            style: mono(12)),
-      ]),
-      _card([
-        Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-          Text('Flip roll (left/right)', style: display(14)),
-          Switch(
-            value: _motion.flipRoll,
-            activeThumbColor: C.lime,
-            onChanged: (v) => setState(() => _motion.flipRoll = v),
+          Text('Live gyro  ${_gyro[0].toStringAsFixed(2)}  ${_gyro[1].toStringAsFixed(2)}  ${_gyro[2].toStringAsFixed(2)} deg/s',
+              style: mono(12)),
+          const SizedBox(height: 6),
+          Row(children: [
+            _button(_sampling ? 'MEASURING...' : 'MEASURE GYRO (2s)', _sampling ? null : _measureGyro),
+          ]),
+        ]),
+        _card([
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Expanded(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('Accelerometer / Rotation Fallback', style: display(14)),
+                const SizedBox(height: 2),
+                Text('Enable only if device lacks a physical gyroscope. Disable for pure low-latency hardware gyro.',
+                    style: mono(11, color: C.mute)),
+              ]),
+            ),
+            Switch(
+              value: _motion.useAccelFallback,
+              activeThumbColor: C.lime,
+              onChanged: (v) => setState(() => _motion.useAccelFallback = v),
+            ),
+          ]),
+        ]),
+        _card([
+          Text('Breath of the Wild & Cemu Shrine Tuning', style: display(14, color: C.cyan)),
+          const SizedBox(height: 4),
+          Text('Invert axes to prevent the apparatus maze from flipping upside-down or reversing.', style: mono(11, color: C.mute)),
+          const Divider(color: C.line, height: 16),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Invert Pitch (forward/back tilt)', style: mono(12)),
+            Switch(
+              value: _motion.invertPitch,
+              activeThumbColor: C.lime,
+              onChanged: (v) => setState(() => _motion.invertPitch = v),
+            ),
+          ]),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Invert Yaw (left/right steering)', style: mono(12)),
+            Switch(
+              value: _motion.invertYaw,
+              activeThumbColor: C.lime,
+              onChanged: (v) => setState(() => _motion.invertYaw = v),
+            ),
+          ]),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Invert Roll (left/right tilt)', style: mono(12)),
+            Switch(
+              value: _motion.invertRoll || _motion.flipRoll,
+              activeThumbColor: C.lime,
+              onChanged: (v) => setState(() {
+                _motion.invertRoll = v;
+                _motion.flipRoll = v;
+              }),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('Sensitivity Multiplier', style: mono(12)),
+            Text('${_motion.sensitivity.toStringAsFixed(1)}x', style: mono(12, color: C.lime)),
+          ]),
+          SliderTheme(
+            data: SliderTheme.of(context).copyWith(activeTrackColor: C.lime, thumbColor: C.lime),
+            child: Slider(
+              value: _motion.sensitivity,
+              min: 0.5,
+              max: 3.0,
+              divisions: 25,
+              onChanged: (v) => setState(() => _motion.sensitivity = (v * 10).round() / 10),
+            ),
           ),
         ]),
-        Text('Tilt the phone left. If the cursor in Cemu goes right, switch this on.', style: mono(12)),
-      ]),
-      const SizedBox(height: 4),
-      Row(children: [
-        _button(_sampling ? 'MEASURING...' : 'MEASURE GYRO', _sampling ? null : _measureGyro),
-        const SizedBox(width: 8),
-        _button('RESET', _reset),
-        const SizedBox(width: 8),
-        _button('SAVE MOTION', _saveMotion, primary: true),
-      ]),
-    ]);
+        const SizedBox(height: 6),
+        Row(children: [
+          _button('RESET', _reset),
+          const SizedBox(width: 8),
+          _button('SAVE MOTION', _saveMotion, primary: true),
+        ]),
+      ]);
   }
 }

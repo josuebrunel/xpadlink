@@ -23,6 +23,9 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -107,10 +110,40 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applyImmersiveMode()
         Log.i(TAG, "MainActivity created")
         val im = getSystemService(INPUT_SERVICE) as InputManager
         im.registerInputDeviceListener(deviceListener, null)
         for (id in InputDevice.getDeviceIds()) logDevice("present", InputDevice.getDevice(id))
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            applyImmersiveMode()
+        }
+    }
+
+    private fun applyImmersiveMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            val controller = window.insetsController
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
+        }
     }
 
     /** BLUETOOTH_CONNECT is a runtime permission from Android 12. */
@@ -249,6 +282,26 @@ class MainActivity : FlutterActivity() {
                 }
             })
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/motion_config")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setFallbackEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        useAccelFallback = enabled
+                        if (motionSink != null) {
+                            stopMotion()
+                            startMotion()
+                        }
+                        result.success(true)
+                    }
+                    "hasGyroscope" -> {
+                        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                        result.success(sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/gamepad")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(args: Any?, events: EventChannel.EventSink?) {
@@ -328,21 +381,30 @@ class MainActivity : FlutterActivity() {
         }
     }
 
+    private var useAccelFallback = false
+
     private fun startMotion() {
         val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-            ?: sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-            ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val hardwareGyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val gyro = if (!useAccelFallback && hardwareGyro != null) {
+            hardwareGyro
+        } else if (useAccelFallback) {
+            hardwareGyro
+                ?: sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+                ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        } else {
+            hardwareGyro
+        }
         if (gyro == null || acc == null) {
-            Log.w(TAG, "motion unavailable: turn-rate source=${gyro != null} accel=${acc != null}")
+            Log.w(TAG, "motion unavailable: hardwareGyro=${hardwareGyro != null} fallback=$useAccelFallback accel=${acc != null}")
             return
         }
         prevQ = null
-        val us = 16000 // ~60 Hz
+        val us = 10000 // ~100 Hz for low latency in Cemu/BotW
         sm.registerListener(motionListener, acc, us)
         sm.registerListener(motionListener, gyro, us)
-        Log.i(TAG, "motion started (turn rate from '${gyro.name}', accel='${acc.name}')")
+        Log.i(TAG, "motion started (turn rate from '${gyro.name}' [accelFallback=$useAccelFallback], accel='${acc.name}')")
     }
 
     private fun stopMotion() {
