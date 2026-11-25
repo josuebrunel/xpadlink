@@ -470,6 +470,20 @@ class InputMixer {
     _volLatchDown = false;
   }
 
+  /// Parses one event from the native `xpadlink/volume_keys` channel.
+  /// Always honors `'clear'` (focus loss / pause), and ignores key presses
+  /// when [allowInput] is false (modal sheet / layout editor active).
+  bool handleVolumeEvent(dynamic event, {bool allowInput = true}) {
+    if (event is! Map) return false;
+    final key = event['key'];
+    if (key == 'clear') {
+      clearVolumeInput();
+      return false;
+    }
+    if (!allowInput || (key != 'up' && key != 'down')) return false;
+    return handleVolumeKey(isUp: key == 'up', down: event['down'] == true);
+  }
+
   void setTouchButton(int bit, bool down) {
     _touchButtons = down ? (_touchButtons | bit) : (_touchButtons & ~bit);
   }

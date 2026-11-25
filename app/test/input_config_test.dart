@@ -259,6 +259,49 @@ void main() {
       expect(mixer.activeVolumeTargets, isEmpty);
     });
 
+    test('handleVolumeEvent clears toggle latch on clear and ignores input when disallowed', () {
+      final mixer = InputMixer();
+      mixer.setVolumeConfig(
+        VolumeTriggerConfig(
+          enabled: true,
+          volumeUp: VolumeButtonBinding(
+            target: TriggerTarget.rt,
+            mode: TriggerPressMode.toggle,
+          ),
+          volumeDown: VolumeButtonBinding(target: TriggerTarget.lt),
+        ),
+        flipped: false,
+      );
+
+      final out = PadState();
+
+      // Modal/editor active: ignores press
+      expect(
+        mixer.handleVolumeEvent({'key': 'up', 'down': true}, allowInput: false),
+        isFalse,
+      );
+      mixer.applyTo(out);
+      expect(out.rt, 0);
+
+      // Active gameplay: press latches RT ON
+      expect(
+        mixer.handleVolumeEvent({'key': 'up', 'down': true}, allowInput: true),
+        isTrue,
+      );
+      mixer.handleVolumeEvent({'key': 'up', 'down': false}, allowInput: true);
+      mixer.applyTo(out);
+      expect(out.rt, 255);
+
+      // Focus loss 'clear' clears latched trigger even when allowInput is false
+      expect(
+        mixer.handleVolumeEvent({'key': 'clear', 'down': false}, allowInput: false),
+        isFalse,
+      );
+      mixer.applyTo(out);
+      expect(out.rt, 0);
+      expect(mixer.activeVolumeTargets, isEmpty);
+    });
+
     test('arbitrates right stick cleanly among touch-look, touch stick, and physical pad', () {
       final mixer = InputMixer();
       final out = PadState();

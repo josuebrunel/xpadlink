@@ -14,6 +14,8 @@ Future<void> showInputSettingsSheet({
   final store = InputSettingsStore();
   var cfg = initialConfig?.clone() ?? await store.load();
   var tab = initialTab.clamp(0, 1);
+  var gen = 0;
+  var persistChain = Future<void>.value();
 
   if (!context.mounted) return;
 
@@ -29,10 +31,15 @@ Future<void> showInputSettingsSheet({
       builder: (ctx, setSheetState) {
         final maxHeight = MediaQuery.of(context).size.height * 0.90;
 
-        void commit(VoidCallback mutate) {
+        void commit(VoidCallback mutate, {bool save = true}) {
           setSheetState(mutate);
-          store.save(cfg);
           onChanged?.call(cfg.clone());
+          if (!save) return;
+          final targetGen = ++gen;
+          final snap = cfg.clone();
+          persistChain = persistChain.then((_) async {
+            if (targetGen == gen) await store.save(snap);
+          });
         }
 
         Widget card(List<Widget> children, {Color? border}) => Container(
@@ -485,8 +492,11 @@ Future<void> showInputSettingsSheet({
                     min: 0.3,
                     max: 3.0,
                     divisions: 27,
-                    onChanged: (v) =>
-                        commit(() => tl.sensitivity = (v * 10).round() / 10),
+                    onChanged: (v) => commit(
+                      () => tl.sensitivity = (v * 10).round() / 10,
+                      save: false,
+                    ),
+                    onChangeEnd: (_) => commit(() {}),
                   ),
                 ),
                 Opacity(
@@ -517,8 +527,10 @@ Future<void> showInputSettingsSheet({
                               ? (v) => commit(
                                     () => tl.deadzoneBoost =
                                         (v * 100).round() / 100,
+                                    save: false,
                                   )
                               : null,
+                          onChangeEnd: isRelative ? (_) => commit(() {}) : null,
                         ),
                       ),
                     ],
@@ -675,8 +687,13 @@ Future<void> showInputSettingsSheet({
                     children: [
                       OutlinedButton(
                         onPressed: () async {
-                          final fresh = await store.reset();
-                          if (!ctx.mounted) return;
+                          final resetGen = ++gen;
+                          late InputSettingsConfig fresh;
+                          persistChain = persistChain.then((_) async {
+                            fresh = await store.reset();
+                          });
+                          await persistChain;
+                          if (!ctx.mounted || resetGen != gen) return;
                           setSheetState(() => cfg = fresh);
                           onChanged?.call(cfg.clone());
                         },
@@ -689,8 +706,13 @@ Future<void> showInputSettingsSheet({
                           foregroundColor: C.bg,
                         ),
                         onPressed: () async {
-                          await store.save(cfg);
-                          onChanged?.call(cfg.clone());
+                          final doneGen = ++gen;
+                          final snap = cfg.clone();
+                          persistChain = persistChain.then((_) async {
+                            if (doneGen == gen) await store.save(snap);
+                          });
+                          await persistChain;
+                          onChanged?.call(snap);
                           if (ctx.mounted) Navigator.of(ctx).pop();
                         },
                         child: const Text('DONE'),

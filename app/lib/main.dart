@@ -274,65 +274,75 @@ class _ConnectScreenState extends State<ConnectScreen>
         TextSpan(text: 'XPAD', style: display(20, spacing: 3.2)),
         TextSpan(text: 'LINK', style: display(20, color: C.lime, spacing: 3.2)),
       ])),
-      const Spacer(),
-      OutlinedButton.icon(
-        onPressed: _openMotionSettings,
-        icon: const Icon(Icons.screen_rotation_outlined, size: 15, color: C.cyan),
-        label: Text('GYRO', style: display(11, color: C.cyan, spacing: 1.2)),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: C.line),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-      const SizedBox(width: 6),
-      OutlinedButton.icon(
-        onPressed: () => _openInputSettings(),
-        icon: const Icon(Icons.gamepad_outlined, size: 15, color: C.lime),
-        label: Text('INPUT', style: display(11, color: C.lime, spacing: 1.2)),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: C.line),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
-      const SizedBox(width: 6),
-      OutlinedButton.icon(
-        onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-          builder: (_) => const LayoutEditorScreen(),
-        )),
-        icon: const Icon(Icons.dashboard_customize_outlined, size: 15, color: C.ink),
-        label: Text('CONTROLS', style: display(11, color: C.ink, spacing: 1.2)),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: C.line),
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-          visualDensity: VisualDensity.compact,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-        ),
-      ),
       const SizedBox(width: 8),
-      Container(
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        decoration: BoxDecoration(
-          color: C.bg.withAlpha(170),
-          borderRadius: BorderRadius.circular(99),
-          border: Border.all(color: C.line),
-        ),
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: _scanning ? C.cyan : C.lime,
-              boxShadow: [BoxShadow(color: _scanning ? C.cyan : C.lime, blurRadius: 8)],
-            ),
+      Expanded(
+        child: Align(
+          alignment: Alignment.centerRight,
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              OutlinedButton.icon(
+                onPressed: _openMotionSettings,
+                icon: const Icon(Icons.screen_rotation_outlined, size: 15, color: C.cyan),
+                label: Text('GYRO', style: display(11, color: C.cyan, spacing: 1.2)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: C.line),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                onPressed: () => _openInputSettings(),
+                icon: const Icon(Icons.gamepad_outlined, size: 15, color: C.lime),
+                label: Text('INPUT', style: display(11, color: C.lime, spacing: 1.2)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: C.line),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 6),
+              OutlinedButton.icon(
+                onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => const LayoutEditorScreen(),
+                )),
+                icon: const Icon(Icons.dashboard_customize_outlined, size: 15, color: C.ink),
+                label: Text('CONTROLS', style: display(11, color: C.ink, spacing: 1.2)),
+                style: OutlinedButton.styleFrom(
+                  side: const BorderSide(color: C.line),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  visualDensity: VisualDensity.compact,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: C.bg.withAlpha(170),
+                  borderRadius: BorderRadius.circular(99),
+                  border: Border.all(color: C.line),
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: _scanning ? C.cyan : C.lime,
+                      boxShadow: [BoxShadow(color: _scanning ? C.cyan : C.lime, blurRadius: 8)],
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Eyebrow(_scanning ? 'Scanning' : 'Ready'),
+                ]),
+              ),
+            ]),
           ),
-          const SizedBox(width: 8),
-          Eyebrow(_scanning ? 'Scanning' : 'Ready'),
-        ]),
+        ),
       ),
     ]);
   }
@@ -621,18 +631,19 @@ class _ConnectScreenState extends State<ConnectScreen>
         ),
       ]),
       const SizedBox(height: 8),
-      Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+      Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 8,
+        runSpacing: 4,
         children: [
-          Flexible(
-            child: Text(
-              _server.text.startsWith('bt:') ? 'BLUETOOTH · RFCOMM · SLOT AUTO' : 'WI-FI · UDP · SLOT AUTO',
-              overflow: TextOverflow.ellipsis,
-              style: mono(10, spacing: .8),
-            ),
+          Text(
+            _server.text.startsWith('bt:') ? 'BLUETOOTH · RFCOMM · SLOT AUTO' : 'WI-FI · UDP · SLOT AUTO',
+            style: mono(10, spacing: .8),
           ),
-          Row(
-            mainAxisSize: MainAxisSize.min,
+          Wrap(
+            spacing: 4,
+            runSpacing: 4,
             children: [
               InkWell(
                 onTap: () => _openInputSettings(),
@@ -649,7 +660,6 @@ class _ConnectScreenState extends State<ConnectScreen>
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
               InkWell(
                 onTap: _openMotionSettings,
                 borderRadius: BorderRadius.circular(6),
@@ -768,7 +778,8 @@ class ControllerScreen extends StatefulWidget {
   State<ControllerScreen> createState() => _ControllerScreenState();
 }
 
-class _ControllerScreenState extends State<ControllerScreen> {
+class _ControllerScreenState extends State<ControllerScreen>
+    with WidgetsBindingObserver {
   static const _channel = EventChannel('xpadlink/gamepad');
   static const _motionChannel = EventChannel('xpadlink/motion');
   static const _motionConfig = MethodChannel('xpadlink/motion_config');
@@ -803,6 +814,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     SystemChrome.setPreferredOrientations(_landscape);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     _client.addListener(() => setState(() {}));
@@ -837,11 +849,21 @@ class _ControllerScreenState extends State<ControllerScreen> {
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) {
+      _mixer.clearVolumeInput();
+      _mixer.applyTo(_client.state);
+      if (mounted) setState(() {});
+    }
+  }
+
   void _syncVolumeIntercept() {
     final active = _modalDepth == 0 && !_editingLayout;
     if (!active) {
       _mixer.clearVolumeInput();
       _mixer.applyTo(_client.state);
+      if (mounted) setState(() {});
     }
     final vt = _inputConfig.volumeTriggers;
     _volumeConfig.invokeMethod<void>('setConfig', {
@@ -851,6 +873,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   void _applyInputConfig(InputSettingsConfig next) {
+    if (!mounted) return;
     setState(() {
       _inputConfig = next;
       _mixer.setVolumeConfig(next.volumeTriggers, flipped: _flipped);
@@ -866,10 +889,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
   }
 
   void _onVolumeKey(dynamic event) {
-    if (event is! Map) return;
-    final isUp = event['key'] == 'up';
-    final down = event['down'] == true;
-    final activated = _mixer.handleVolumeKey(isUp: isUp, down: down);
+    final activated = _mixer.handleVolumeEvent(
+      event,
+      allowInput: _modalDepth == 0 && !_editingLayout,
+    );
     _mixer.applyTo(_client.state);
     if (activated && _inputConfig.volumeTriggers.hapticsEnabled) {
       HapticFeedback.lightImpact();
@@ -963,6 +986,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _readout?.cancel();
     _padSub?.cancel();
     _motionSub?.cancel();

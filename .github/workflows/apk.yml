@@ -29,6 +29,9 @@ jobs:
           cache: false
       - name: generate the Flutter project
         run: ./app/setup.sh
+      - name: analyze and test
+        working-directory: app/xpadlink_app
+        run: flutter analyze --no-fatal-infos && flutter test
       # Without the signing secrets the build falls back to the debug key.
       # That is fine for test runs, but a release tag must never ship it, because
       # users could not update in place over an APK signed with a different key.

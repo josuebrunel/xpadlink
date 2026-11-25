@@ -139,16 +139,14 @@ class MainActivity : FlutterActivity() {
     }
 
     private fun releaseHeldVolumeKeys() {
-        if (volUpHeld) {
-            volUpHeld = false
-            volumeSink?.success(mapOf("key" to "up", "down" to false))
-        }
-        if (volDownHeld) {
-            volDownHeld = false
-            volumeSink?.success(mapOf("key" to "down", "down" to false))
-        }
+        val hadActive = volUpHeld || volDownHeld || interceptVolUp || interceptVolDown
+        volUpHeld = false
+        volDownHeld = false
         volUpConsumedDown = false
         volDownConsumedDown = false
+        if (hadActive) {
+            volumeSink?.success(mapOf("key" to "clear", "down" to false))
+        }
     }
 
     private fun applyImmersiveMode() {
@@ -371,9 +369,12 @@ class MainActivity : FlutterActivity() {
                 }
 
                 override fun onCancel(args: Any?) {
-                    releaseHeldVolumeKeys()
                     interceptVolUp = false
                     interceptVolDown = false
+                    volUpHeld = false
+                    volDownHeld = false
+                    volUpConsumedDown = false
+                    volDownConsumedDown = false
                     volumeSink = null
                 }
             })
@@ -608,7 +609,7 @@ class MainActivity : FlutterActivity() {
             }
             return true
         }
-        if (!down && (intercept || consumedDown)) {
+        if (!down && consumedDown) {
             if (isUp) volUpConsumedDown = false else volDownConsumedDown = false
             if (held) {
                 if (isUp) volUpHeld = false else volDownHeld = false
