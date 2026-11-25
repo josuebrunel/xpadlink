@@ -687,7 +687,7 @@ class LayoutSettingsDialog extends StatelessWidget {
               subtitle: Text('Haptic buzz when buttons are pressed',
                   style: mono(11, color: C.mute)),
               value: hapticsEnabled,
-              activeColor: C.lime,
+              activeThumbColor: C.lime,
               onChanged: onHapticsChanged,
             ),
 
@@ -698,7 +698,7 @@ class LayoutSettingsDialog extends StatelessWidget {
               subtitle: Text('Snap positions to 2.5% alignment grid',
                   style: mono(11, color: C.mute)),
               value: snapToGrid,
-              activeColor: C.lime,
+              activeThumbColor: C.lime,
               onChanged: onSnapChanged,
             ),
           ],

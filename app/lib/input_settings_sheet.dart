@@ -42,13 +42,13 @@ Future<void> showInputSettingsSheet({
           });
         }
 
-        Widget card(List<Widget> children, {Color? border}) => Container(
+        Widget card(List<Widget> children) => Container(
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: C.panel2,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: border ?? C.line),
+                border: Border.all(color: C.line),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -59,9 +59,8 @@ Future<void> showInputSettingsSheet({
         Widget segBtn(
           String label,
           bool selected,
-          VoidCallback onTap, {
-          Color accent = C.cyan,
-        }) =>
+          VoidCallback onTap,
+        ) =>
             Expanded(
               child: GestureDetector(
                 onTap: onTap,
@@ -69,9 +68,9 @@ Future<void> showInputSettingsSheet({
                   height: 32,
                   alignment: Alignment.center,
                   decoration: BoxDecoration(
-                    color: selected ? accent.withAlpha(36) : C.panel2,
+                    color: selected ? C.cyan.withAlpha(36) : C.panel2,
                     borderRadius: BorderRadius.circular(7),
-                    border: Border.all(color: selected ? accent : C.line),
+                    border: Border.all(color: selected ? C.cyan : C.line),
                   ),
                   child: Text(
                     label,
@@ -79,7 +78,7 @@ Future<void> showInputSettingsSheet({
                     overflow: TextOverflow.ellipsis,
                     style: mono(
                       11,
-                      color: selected ? accent : C.mute,
+                      color: selected ? C.cyan : C.mute,
                       w: FontWeight.w600,
                     ),
                   ),

@@ -96,8 +96,8 @@ class _ConnectScreenState extends State<ConnectScreen>
     showMotionSettingsSheet(context: context);
   }
 
-  void _openInputSettings({int tab = 0}) {
-    showInputSettingsSheet(context: context, initialTab: tab);
+  void _openInputSettings() {
+    showInputSettingsSheet(context: context);
   }
 
   @override
@@ -294,7 +294,7 @@ class _ConnectScreenState extends State<ConnectScreen>
               ),
               const SizedBox(width: 6),
               OutlinedButton.icon(
-                onPressed: () => _openInputSettings(),
+                onPressed: _openInputSettings,
                 icon: const Icon(Icons.gamepad_outlined, size: 15, color: C.lime),
                 label: Text('INPUT', style: display(11, color: C.lime, spacing: 1.2)),
                 style: OutlinedButton.styleFrom(
@@ -646,7 +646,7 @@ class _ConnectScreenState extends State<ConnectScreen>
             runSpacing: 4,
             children: [
               InkWell(
-                onTap: () => _openInputSettings(),
+                onTap: _openInputSettings,
                 borderRadius: BorderRadius.circular(6),
                 child: Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -807,7 +807,6 @@ class _ControllerScreenState extends State<ControllerScreen>
   bool _editingLayout = false;
   bool _groupMode = false;
   String _selectedControlId = ControlId.leftStick;
-  bool _layoutDirty = false;
   bool _showOverlay = true;
   String? _error;
   Timer? _readout; // refreshes the stick values while the touch controls are hidden
@@ -1017,7 +1016,6 @@ class _ControllerScreenState extends State<ControllerScreen>
     await _layoutStore.save(_layout);
     if (!mounted) return;
     setState(() {
-      _layoutDirty = false;
       _editingLayout = false;
     });
     _syncVolumeIntercept();
@@ -1031,7 +1029,6 @@ class _ControllerScreenState extends State<ControllerScreen>
     if (!mounted) return;
     setState(() {
       _layout = loaded;
-      _layoutDirty = false;
       _editingLayout = false;
     });
     _syncVolumeIntercept();
@@ -1041,35 +1038,30 @@ class _ControllerScreenState extends State<ControllerScreen>
     setState(() {
       _layout.moveControl(id, relX, relY, groupMode: _groupMode);
       _selectedControlId = id;
-      _layoutDirty = true;
     });
   }
 
   void _changeScale(double delta) {
     setState(() {
       _layout.scaleControl(_selectedControlId, delta, groupMode: _groupMode);
-      _layoutDirty = true;
     });
   }
 
   void _toggleVisibility() {
     setState(() {
       _layout.toggleVisibility(_selectedControlId, groupMode: _groupMode);
-      _layoutDirty = true;
     });
   }
 
   void _resetSelectedElement() {
     setState(() {
       _layout.resetControl(_selectedControlId, groupMode: _groupMode);
-      _layoutDirty = true;
     });
   }
 
   void _resetAllElements() {
     setState(() {
       _layout = PadLayoutConfig.defaultXbox();
-      _layoutDirty = true;
     });
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Reset all controls to Xbox default')),
@@ -1097,7 +1089,6 @@ class _ControllerScreenState extends State<ControllerScreen>
           Navigator.pop(ctx);
           setState(() {
             _layout = preset;
-            _layoutDirty = true;
           });
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(content: Text('Preset applied')),
@@ -1119,21 +1110,18 @@ class _ControllerScreenState extends State<ControllerScreen>
             setDialogState(() => _layout.opacity = v);
             setState(() {
               _layout.opacity = v;
-              _layoutDirty = true;
             });
           },
           onHapticsChanged: (v) {
             setDialogState(() => _layout.hapticsEnabled = v);
             setState(() {
               _layout.hapticsEnabled = v;
-              _layoutDirty = true;
             });
           },
           onSnapChanged: (v) {
             setDialogState(() => _layout.snapToGrid = v);
             setState(() {
               _layout.snapToGrid = v;
-              _layoutDirty = true;
             });
           },
         ),
