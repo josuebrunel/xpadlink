@@ -73,6 +73,13 @@ class MainActivity : FlutterActivity() {
     private var btPermission: ((Boolean) -> Unit)? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var motionSink: EventChannel.EventSink? = null
+    private var volumeSink: EventChannel.EventSink? = null
+    private var interceptVolUp = false
+    private var interceptVolDown = false
+    private var volUpHeld = false
+    private var volDownHeld = false
+    private var volUpConsumedDown = false
+    private var volDownConsumedDown = false
     private val accel = FloatArray(3)
     private var prevQ: FloatArray? = null
     private var prevQNs = 0L
@@ -117,11 +124,31 @@ class MainActivity : FlutterActivity() {
         for (id in InputDevice.getDeviceIds()) logDevice("present", InputDevice.getDevice(id))
     }
 
+    override fun onPause() {
+        releaseHeldVolumeKeys()
+        super.onPause()
+    }
+
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
             applyImmersiveMode()
+        } else {
+            releaseHeldVolumeKeys()
         }
+    }
+
+    private fun releaseHeldVolumeKeys() {
+        if (volUpHeld) {
+            volUpHeld = false
+            volumeSink?.success(mapOf("key" to "up", "down" to false))
+        }
+        if (volDownHeld) {
+            volDownHeld = false
+            volumeSink?.success(mapOf("key" to "down", "down" to false))
+        }
+        volUpConsumedDown = false
+        volDownConsumedDown = false
     }
 
     private fun applyImmersiveMode() {
@@ -192,6 +219,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        releaseHeldVolumeKeys()
         btClose()
         stopMotion()
         (getSystemService(INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(deviceListener)
@@ -312,6 +340,41 @@ class MainActivity : FlutterActivity() {
                 override fun onCancel(args: Any?) {
                     Log.i(TAG, "gamepad channel: Dart stopped listening")
                     sink = null
+                }
+            })
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/volume_config")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "setConfig") {
+                    val up = call.argument<Boolean>("interceptUp") ?: false
+                    val down = call.argument<Boolean>("interceptDown") ?: false
+                    if (!up && volUpHeld) {
+                        volUpHeld = false
+                        volumeSink?.success(mapOf("key" to "up", "down" to false))
+                    }
+                    if (!down && volDownHeld) {
+                        volDownHeld = false
+                        volumeSink?.success(mapOf("key" to "down", "down" to false))
+                    }
+                    interceptVolUp = up
+                    interceptVolDown = down
+                    result.success(null)
+                } else {
+                    result.notImplemented()
+                }
+            }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/volume_keys")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(args: Any?, events: EventChannel.EventSink?) {
+                    volumeSink = events
+                }
+
+                override fun onCancel(args: Any?) {
+                    releaseHeldVolumeKeys()
+                    interceptVolUp = false
+                    interceptVolDown = false
+                    volumeSink = null
                 }
             })
     }
@@ -530,11 +593,43 @@ class MainActivity : FlutterActivity() {
     private fun setBit(bits: Int, bit: Int, on: Boolean) =
         if (on) bits or bit else bits and bit.inv()
 
+    private fun handleVolumeKey(isUp: Boolean, down: Boolean, repeatCount: Int): Boolean {
+        val intercept = if (isUp) interceptVolUp else interceptVolDown
+        val consumedDown = if (isUp) volUpConsumedDown else volDownConsumedDown
+        val held = if (isUp) volUpHeld else volDownHeld
+        val name = if (isUp) "up" else "down"
+
+        if (down && intercept) {
+            if (repeatCount > 0) return true
+            if (isUp) volUpConsumedDown = true else volDownConsumedDown = true
+            if (!held) {
+                if (isUp) volUpHeld = true else volDownHeld = true
+                volumeSink?.success(mapOf("key" to name, "down" to true))
+            }
+            return true
+        }
+        if (!down && (intercept || consumedDown)) {
+            if (isUp) volUpConsumedDown = false else volDownConsumedDown = false
+            if (held) {
+                if (isUp) volUpHeld = false else volDownHeld = false
+                volumeSink?.success(mapOf("key" to name, "down" to false))
+            }
+            return true
+        }
+        return false
+    }
+
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN && e.action != KeyEvent.ACTION_UP) {
             return super.dispatchKeyEvent(e)
         }
         val down = e.action == KeyEvent.ACTION_DOWN
+
+        if (e.keyCode == KeyEvent.KEYCODE_VOLUME_UP || e.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val isUp = e.keyCode == KeyEvent.KEYCODE_VOLUME_UP
+            return if (handleVolumeKey(isUp, down, e.repeatCount)) true else super.dispatchKeyEvent(e)
+        }
+
         val pad = isPad(e.source)
         if (pad) padDeviceId = e.deviceId
         noteDevice(e)
