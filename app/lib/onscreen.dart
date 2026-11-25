@@ -491,6 +491,7 @@ class OnScreenPad extends StatelessWidget {
     required this.state,
     this.layout,
     this.editMode = false,
+    this.groupMode = false,
     this.selectedId,
     this.onSelect,
     this.onElementMoved,
@@ -503,6 +504,7 @@ class OnScreenPad extends StatelessWidget {
   final PadState state;
   final PadLayoutConfig? layout;
   final bool editMode;
+  final bool groupMode;
   final String? selectedId;
   final ValueChanged<String>? onSelect;
   final void Function(String id, double relX, double relY)? onElementMoved;
@@ -564,6 +566,9 @@ class OnScreenPad extends StatelessWidget {
     final tl = touchLook;
     final tlActive = !editMode && (tl?.enabled ?? false);
     final hideRightStick = tlActive && tl!.hideRightStick;
+    final groupMembers = (editMode && groupMode && selectedId != null)
+        ? (ControlId.groupOf(selectedId!) ?? const <String>[])
+        : const <String>[];
 
     return LayoutBuilder(builder: (context, c) {
       final w = c.maxWidth;
@@ -624,6 +629,11 @@ class OnScreenPad extends StatelessWidget {
             width: elemW,
             height: elemH,
             isSelected: editMode && selectedId == id,
+            isGroupMember:
+                editMode && groupMembers.contains(id) && selectedId != id,
+            groupBadge: (editMode && groupMode && selectedId == id)
+                ? ControlId.groupNameOf(id)
+                : null,
             isHidden: !elem.visible,
             editMode: editMode,
             onTap: () => onSelect?.call(id),
@@ -799,126 +809,125 @@ class OnScreenPad extends StatelessWidget {
             haptics: cfg.hapticsEnabled),
       );
 
-      // 9. D-Pad
-      final dpElem = cfg.getElement(ControlId.dpad);
-      final dpBtn = baseB * dpElem.scale;
-      final dpSize = dpBtn * 3;
-      final dpWidget = buildPositioned(
-        id: ControlId.dpad,
-        elemW: dpSize,
-        elemH: dpSize,
-        child: SizedBox(
-          width: dpSize,
-          height: dpSize,
-          child: Stack(children: [
-            Positioned(
-                left: dpBtn,
-                top: 0,
-                child: _btn('▲', Btn.dUp, dpBtn,
-                    target: TriggerTarget.dUp,
-                    round: false,
-                    haptics: cfg.hapticsEnabled)),
-            Positioned(
-                left: dpBtn,
-                bottom: 0,
-                child: _btn('▼', Btn.dDown, dpBtn,
-                    target: TriggerTarget.dDown,
-                    round: false,
-                    haptics: cfg.hapticsEnabled)),
-            Positioned(
-                left: 0,
-                top: dpBtn,
-                child: _btn('◀', Btn.dLeft, dpBtn,
-                    target: TriggerTarget.dLeft,
-                    round: false,
-                    haptics: cfg.hapticsEnabled)),
-            Positioned(
-                right: 0,
-                top: dpBtn,
-                child: _btn('▶', Btn.dRight, dpBtn,
-                    target: TriggerTarget.dRight,
-                    round: false,
-                    haptics: cfg.hapticsEnabled)),
-          ]),
+      Widget dpadButton(
+        String id,
+        String label,
+        int bit,
+        TriggerTarget target,
+      ) {
+        final elem = cfg.getElement(id);
+        final size = baseB * elem.scale;
+        return buildPositioned(
+          id: id,
+          elemW: size,
+          elemH: size,
+          child: _btn(
+            label,
+            bit,
+            size,
+            target: target,
+            round: false,
+            haptics: cfg.hapticsEnabled,
+          ),
+        );
+      }
+
+      Widget faceButton(
+        String id,
+        String label,
+        int bit,
+        TriggerTarget target,
+        Color color,
+      ) {
+        final elem = cfg.getElement(id);
+        final size = baseB * elem.scale;
+        return buildPositioned(
+          id: id,
+          elemW: size,
+          elemH: size,
+          child: _btn(
+            label,
+            bit,
+            size,
+            target: target,
+            color: color,
+            haptics: cfg.hapticsEnabled,
+          ),
+        );
+      }
+
+      // 9. Individual D-Pad Buttons
+      final dpadUpWidget = dpadButton(ControlId.dpadUp, '▲', Btn.dUp, TriggerTarget.dUp);
+      final dpadDownWidget =
+          dpadButton(ControlId.dpadDown, '▼', Btn.dDown, TriggerTarget.dDown);
+      final dpadLeftWidget =
+          dpadButton(ControlId.dpadLeft, '◀', Btn.dLeft, TriggerTarget.dLeft);
+      final dpadRightWidget =
+          dpadButton(ControlId.dpadRight, '▶', Btn.dRight, TriggerTarget.dRight);
+
+      // 10. Individual ABXY Face Buttons
+      final btnYWidget = faceButton(ControlId.btnY, 'Y', Btn.y, TriggerTarget.y, C.y);
+      final btnAWidget = faceButton(ControlId.btnA, 'A', Btn.a, TriggerTarget.a, C.a);
+      final btnXWidget = faceButton(ControlId.btnX, 'X', Btn.x, TriggerTarget.x, C.x);
+      final btnBWidget = faceButton(ControlId.btnB, 'B', Btn.b, TriggerTarget.b, C.b);
+
+      // 11. Individual Center Navigation (View / Guide / Menu)
+      final viewElem = cfg.getElement(ControlId.btnView);
+      final viewW = baseB * 1.5 * viewElem.scale;
+      final viewH = baseB * 0.55 * viewElem.scale;
+      final viewWidget = buildPositioned(
+        id: ControlId.btnView,
+        elemW: viewW,
+        elemH: viewH,
+        child: _btn(
+          'VIEW',
+          Btn.back,
+          viewH,
+          target: TriggerTarget.back,
+          round: false,
+          w: viewW,
+          haptics: cfg.hapticsEnabled,
         ),
       );
 
-      // 10. ABXY Face Buttons
-      final abElem = cfg.getElement(ControlId.abxy);
-      final abBtn = baseB * abElem.scale;
-      final abSize = abBtn * 3;
-      final abWidget = buildPositioned(
-        id: ControlId.abxy,
-        elemW: abSize,
-        elemH: abSize,
-        child: SizedBox(
-          width: abSize,
-          height: abSize,
-          child: Stack(children: [
-            Positioned(
-                left: abBtn,
-                top: 0,
-                child: _btn('Y', Btn.y, abBtn,
-                    target: TriggerTarget.y,
-                    color: C.y,
-                    haptics: cfg.hapticsEnabled)),
-            Positioned(
-                left: abBtn,
-                bottom: 0,
-                child: _btn('A', Btn.a, abBtn,
-                    target: TriggerTarget.a,
-                    color: C.a,
-                    haptics: cfg.hapticsEnabled)),
-            Positioned(
-                left: 0,
-                top: abBtn,
-                child: _btn('X', Btn.x, abBtn,
-                    target: TriggerTarget.x,
-                    color: C.x,
-                    haptics: cfg.hapticsEnabled)),
-            Positioned(
-                right: 0,
-                top: abBtn,
-                child: _btn('B', Btn.b, abBtn,
-                    target: TriggerTarget.b,
-                    color: C.b,
-                    haptics: cfg.hapticsEnabled)),
-          ]),
+      final guideElem = cfg.getElement(ControlId.btnGuide);
+      final guideSize = baseB * 0.95 * guideElem.scale;
+      final guideWidget = buildPositioned(
+        id: ControlId.btnGuide,
+        elemW: guideSize,
+        elemH: guideSize,
+        child: _btn(
+          '',
+          Btn.guide,
+          guideSize,
+          target: TriggerTarget.guide,
+          haptics: cfg.hapticsEnabled,
+          child: ClipOval(
+            child: Image.asset(
+              'assets/logo.png',
+              width: guideSize * 0.84,
+              height: guideSize * 0.84,
+            ),
+          ),
         ),
       );
 
-      // 11. Center Navigation (View / Guide / Menu)
-      final cElem = cfg.getElement(ControlId.center);
-      final cBtnW = baseB * 1.5 * cElem.scale;
-      final cBtnH = baseB * 0.5 * cElem.scale;
-      final cGuide = baseB * 0.95 * cElem.scale;
-      final cGap = 14 * cElem.scale;
-      final cTotalW = cBtnW * 2 + cGuide + cGap * 2;
-      final cTotalH = cGuide;
-      final cWidget = buildPositioned(
-        id: ControlId.center,
-        elemW: cTotalW,
-        elemH: cTotalH,
-        child: Row(mainAxisSize: MainAxisSize.min, children: [
-          _btn('VIEW', Btn.back, cBtnH,
-              target: TriggerTarget.back,
-              round: false,
-              w: cBtnW,
-              haptics: cfg.hapticsEnabled),
-          SizedBox(width: cGap),
-          _btn('', Btn.guide, cGuide,
-              target: TriggerTarget.guide,
-              haptics: cfg.hapticsEnabled,
-              child: ClipOval(
-                  child: Image.asset('assets/logo.png',
-                      width: cGuide * 0.84, height: cGuide * 0.84))),
-          SizedBox(width: cGap),
-          _btn('MENU', Btn.start, cBtnH,
-              target: TriggerTarget.start,
-              round: false,
-              w: cBtnW,
-              haptics: cfg.hapticsEnabled),
-        ]),
+      final startElem = cfg.getElement(ControlId.btnMenu);
+      final startW = baseB * 1.5 * startElem.scale;
+      final startH = baseB * 0.55 * startElem.scale;
+      final startWidget = buildPositioned(
+        id: ControlId.btnMenu,
+        elemW: startW,
+        elemH: startH,
+        child: _btn(
+          'MENU',
+          Btn.start,
+          startH,
+          target: TriggerTarget.start,
+          round: false,
+          w: startW,
+          haptics: cfg.hapticsEnabled,
+        ),
       );
 
       // 12. Floating Quick Menu Button
@@ -967,14 +976,22 @@ class OnScreenPad extends StatelessWidget {
         lbWidget,
         rtWidget,
         rbWidget,
-        cWidget,
-        menuWidget,
+        viewWidget,
+        guideWidget,
+        startWidget,
         lsWidget,
         l3Widget,
-        dpWidget,
-        abWidget,
+        dpadUpWidget,
+        dpadDownWidget,
+        dpadLeftWidget,
+        dpadRightWidget,
+        btnYWidget,
+        btnAWidget,
+        btnXWidget,
+        btnBWidget,
         rsWidget,
         r3Widget,
+        menuWidget,
       ]);
 
       if (editMode) {
@@ -1007,6 +1024,8 @@ class _EditWrapper extends StatelessWidget {
     required this.width,
     required this.height,
     required this.isSelected,
+    this.isGroupMember = false,
+    this.groupBadge,
     required this.isHidden,
     required this.editMode,
     required this.onTap,
@@ -1017,6 +1036,8 @@ class _EditWrapper extends StatelessWidget {
   final String id;
   final double width, height;
   final bool isSelected;
+  final bool isGroupMember;
+  final String? groupBadge;
   final bool isHidden;
   final bool editMode;
   final VoidCallback onTap;
@@ -1031,7 +1052,9 @@ class _EditWrapper extends StatelessWidget {
 
     final borderColor = isSelected
         ? C.lime
-        : (isHidden ? Colors.white.withAlpha(50) : C.cyan.withAlpha(140));
+        : (isGroupMember
+            ? C.lime.withAlpha(160)
+            : (isHidden ? Colors.white.withAlpha(50) : C.cyan.withAlpha(140)));
 
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
@@ -1046,12 +1069,13 @@ class _EditWrapper extends StatelessWidget {
           borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: borderColor,
-            width: isSelected ? 2.0 : 1.0,
-            style: isHidden ? BorderStyle.solid : BorderStyle.solid,
+            width: isSelected ? 2.0 : (isGroupMember ? 1.5 : 1.0),
           ),
           color: isSelected
               ? C.lime.withAlpha(30)
-              : (isHidden ? Colors.black.withAlpha(120) : Colors.transparent),
+              : (isGroupMember
+                  ? C.lime.withAlpha(16)
+                  : (isHidden ? Colors.black.withAlpha(120) : Colors.transparent)),
           boxShadow: isSelected
               ? [
                   BoxShadow(
@@ -1100,7 +1124,7 @@ class _EditWrapper extends StatelessWidget {
                     ],
                   ),
                   child: Text(
-                    ControlId.displayName(id).toUpperCase(),
+                    '${ControlId.displayName(id).toUpperCase()}${groupBadge != null ? ' · GROUP' : ''}',
                     style: mono(9, color: C.bg, w: FontWeight.w700),
                   ),
                 ),
