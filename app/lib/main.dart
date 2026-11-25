@@ -8,6 +8,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'calibration.dart';
 import 'client.dart';
 import 'discovery.dart';
+import 'input_config.dart';
+import 'input_settings_sheet.dart';
 import 'layout.dart';
 import 'layout_editor.dart';
 import 'link.dart';
@@ -92,6 +94,10 @@ class _ConnectScreenState extends State<ConnectScreen>
 
   void _openMotionSettings() {
     showMotionSettingsSheet(context: context);
+  }
+
+  void _openInputSettings({int tab = 0}) {
+    showInputSettingsSheet(context: context, initialTab: tab);
   }
 
   @override
@@ -273,6 +279,18 @@ class _ConnectScreenState extends State<ConnectScreen>
         onPressed: _openMotionSettings,
         icon: const Icon(Icons.screen_rotation_outlined, size: 15, color: C.cyan),
         label: Text('GYRO', style: display(11, color: C.cyan, spacing: 1.2)),
+        style: OutlinedButton.styleFrom(
+          side: const BorderSide(color: C.line),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+          visualDensity: VisualDensity.compact,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+        ),
+      ),
+      const SizedBox(width: 6),
+      OutlinedButton.icon(
+        onPressed: () => _openInputSettings(),
+        icon: const Icon(Icons.gamepad_outlined, size: 15, color: C.lime),
+        label: Text('INPUT', style: display(11, color: C.lime, spacing: 1.2)),
         style: OutlinedButton.styleFrom(
           side: const BorderSide(color: C.line),
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
@@ -606,24 +624,48 @@ class _ConnectScreenState extends State<ConnectScreen>
       Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            _server.text.startsWith('bt:') ? 'BLUETOOTH · RFCOMM · SLOT AUTO' : 'WI-FI · UDP · SLOT AUTO',
-            style: mono(10, spacing: .8),
-          ),
-          InkWell(
-            onTap: _openMotionSettings,
-            borderRadius: BorderRadius.circular(6),
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.tune, size: 13, color: C.cyan),
-                  const SizedBox(width: 4),
-                  Text('GYRO SETTINGS', style: display(10, color: C.cyan, spacing: 0.8)),
-                ],
-              ),
+          Flexible(
+            child: Text(
+              _server.text.startsWith('bt:') ? 'BLUETOOTH · RFCOMM · SLOT AUTO' : 'WI-FI · UDP · SLOT AUTO',
+              overflow: TextOverflow.ellipsis,
+              style: mono(10, spacing: .8),
             ),
+          ),
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              InkWell(
+                onTap: () => _openInputSettings(),
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.gamepad_outlined, size: 13, color: C.lime),
+                      const SizedBox(width: 4),
+                      Text('TRIGGERS & LOOK', style: display(10, color: C.lime, spacing: 0.8)),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 4),
+              InkWell(
+                onTap: _openMotionSettings,
+                borderRadius: BorderRadius.circular(6),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.tune, size: 13, color: C.cyan),
+                      const SizedBox(width: 4),
+                      Text('GYRO SETTINGS', style: display(10, color: C.cyan, spacing: 0.8)),
+                    ],
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
@@ -731,11 +773,14 @@ class _ControllerScreenState extends State<ControllerScreen> {
   static const _motionChannel = EventChannel('xpadlink/motion');
   static const _motionConfig = MethodChannel('xpadlink/motion_config');
   static const _rumbleChannel = MethodChannel('xpadlink/rumble');
+  static const _volumeChannel = EventChannel('xpadlink/volume_keys');
+  static const _volumeConfig = MethodChannel('xpadlink/volume_config');
   static final _log = Log('screen');
 
   final _client = PadClient();
   StreamSubscription<dynamic>? _padSub;
   StreamSubscription<dynamic>? _motionSub;
+  StreamSubscription<dynamic>? _volumeSub;
   bool _motionOn = true;
   bool _flipped = false; // landscape right instead of left
   String? _physical; // name of a physical pad once one has sent input
@@ -744,6 +789,10 @@ class _ControllerScreenState extends State<ControllerScreen> {
   MotionCalibration _motionCal = MotionCalibration();
   final _layoutStore = LayoutStore();
   PadLayoutConfig _layout = PadLayoutConfig.defaultXbox();
+  final _inputStore = InputSettingsStore();
+  InputSettingsConfig _inputConfig = InputSettingsConfig();
+  final _mixer = InputMixer();
+  int _modalDepth = 0;
   bool _editingLayout = false;
   String _selectedControlId = ControlId.leftStick;
   bool _layoutDirty = false;
@@ -766,6 +815,8 @@ class _ControllerScreenState extends State<ControllerScreen> {
     });
     _padSub = _channel.receiveBroadcastStream().listen(_onPhysical,
         onError: (Object e) => _log.e('gamepad channel error', e));
+    _volumeSub = _volumeChannel.receiveBroadcastStream().listen(_onVolumeKey,
+        onError: (Object e) => _log.e('volume channel error', e));
     _calStore.loadMotion().then((c) {
       if (mounted) {
         setState(() => _motionCal = c);
@@ -776,15 +827,75 @@ class _ControllerScreenState extends State<ControllerScreen> {
     _layoutStore.load().then((l) {
       if (mounted) setState(() => _layout = l);
     });
+    _inputStore.load().then((cfg) {
+      if (!mounted) return;
+      _applyInputConfig(cfg);
+    });
     _setMotion(true);
     _readout = Timer.periodic(const Duration(milliseconds: 120), (_) {
       if (mounted && !_showOverlay) setState(() {});
     });
   }
 
+  void _syncVolumeIntercept() {
+    final active = _modalDepth == 0 && !_editingLayout;
+    if (!active) {
+      _mixer.clearVolumeInput();
+      _mixer.applyTo(_client.state);
+    }
+    final vt = _inputConfig.volumeTriggers;
+    _volumeConfig.invokeMethod<void>('setConfig', {
+      'interceptUp': active && vt.shouldInterceptUp(flipped: _flipped),
+      'interceptDown': active && vt.shouldInterceptDown(flipped: _flipped),
+    }).catchError((Object e) => _log.e('volume config failed', e));
+  }
+
+  void _applyInputConfig(InputSettingsConfig next) {
+    setState(() {
+      _inputConfig = next;
+      _mixer.setVolumeConfig(next.volumeTriggers, flipped: _flipped);
+      if (next.touchLook.enabled && next.touchLook.hideRightStick) {
+        _mixer.setTouchRightStick(0, 0);
+      }
+      if (!next.touchLook.enabled) {
+        _mixer.setTouchLook(0, 0, active: false);
+      }
+      _mixer.applyTo(_client.state);
+    });
+    _syncVolumeIntercept();
+  }
+
+  void _onVolumeKey(dynamic event) {
+    if (event is! Map) return;
+    final isUp = event['key'] == 'up';
+    final down = event['down'] == true;
+    final activated = _mixer.handleVolumeKey(isUp: isUp, down: down);
+    _mixer.applyTo(_client.state);
+    if (activated && _inputConfig.volumeTriggers.hapticsEnabled) {
+      HapticFeedback.lightImpact();
+    }
+    if (mounted) setState(() {});
+  }
+
+  Future<T> _withModalPause<T>(Future<T> Function() fn) async {
+    _modalDepth++;
+    _syncVolumeIntercept();
+    try {
+      return await fn();
+    } finally {
+      if (_modalDepth > 0) _modalDepth--;
+      if (mounted) _syncVolumeIntercept();
+    }
+  }
+
   /// Forces the other landscape, for when the system doesn't follow the sensor.
   void _flip() {
-    setState(() => _flipped = !_flipped);
+    setState(() {
+      _flipped = !_flipped;
+      _mixer.setVolumeConfig(_inputConfig.volumeTriggers, flipped: _flipped);
+      _mixer.applyTo(_client.state);
+    });
+    _syncVolumeIntercept();
     SystemChrome.setPreferredOrientations([
       _flipped ? DeviceOrientation.landscapeRight : DeviceOrientation.landscapeLeft,
     ]);
@@ -811,15 +922,15 @@ class _ControllerScreenState extends State<ControllerScreen> {
     if (mounted && _physical == name) _padCal = c;
   }
 
-  Future<void> _openCalibration() async {
-    await Navigator.of(context).push(MaterialPageRoute<void>(
-      builder: (_) => CalibrationScreen(padName: _physical),
-    ));
-    // Pick up whatever was saved while the screen was open.
-    _motionCal = await _calStore.loadMotion();
-    final name = _physical;
-    if (name != null) _padCal = await _calStore.loadPad(name);
-  }
+  Future<void> _openCalibration() => _withModalPause(() async {
+        await Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => CalibrationScreen(padName: _physical),
+        ));
+        // Pick up whatever was saved while the screen was open.
+        _motionCal = await _calStore.loadMotion();
+        final name = _physical;
+        if (name != null) _padCal = await _calStore.loadPad(name);
+      });
 
   void _onRumble(int strong, int weak, int ms) {
     _rumbleChannel.invokeMethod<void>(
@@ -829,14 +940,16 @@ class _ControllerScreenState extends State<ControllerScreen> {
 
   void _onPhysical(dynamic event) {
     final m = Map<String, dynamic>.from(event as Map);
-    final s = _client.state;
-    s.buttons = m['buttons'] as int;
-    s.lx = _padCal.lx(m['lx'] as int);
-    s.ly = _padCal.ly(m['ly'] as int);
-    s.rx = _padCal.rx(m['rx'] as int);
-    s.ry = _padCal.ry(m['ry'] as int);
-    s.lt = _padCal.lt(m['lt'] as int);
-    s.rt = _padCal.rt(m['rt'] as int);
+    _mixer.setPhysicalPad(
+      buttons: m['buttons'] as int,
+      lx: _padCal.lx(m['lx'] as int),
+      ly: _padCal.ly(m['ly'] as int),
+      rx: _padCal.rx(m['rx'] as int),
+      ry: _padCal.ry(m['ry'] as int),
+      lt: _padCal.lt(m['lt'] as int),
+      rt: _padCal.rt(m['rt'] as int),
+    );
+    _mixer.applyTo(_client.state);
     final name = m['name'] as String;
     if (_physical != name) {
       _log.i('physical pad active: $name');
@@ -853,6 +966,12 @@ class _ControllerScreenState extends State<ControllerScreen> {
     _readout?.cancel();
     _padSub?.cancel();
     _motionSub?.cancel();
+    _volumeSub?.cancel();
+    _mixer.clearVolumeInput();
+    _volumeConfig.invokeMethod<void>(
+      'setConfig',
+      {'interceptUp': false, 'interceptDown': false},
+    ).catchError((Object _) {});
     _client.onRumble = null;
     _rumbleChannel.invokeMethod<void>('vibrate', {'strong': 0, 'weak': 0, 'ms': 0});
     _client.dispose();
@@ -866,6 +985,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       _showOverlay = true;
       _editingLayout = true;
     });
+    _syncVolumeIntercept();
   }
 
   Future<void> _saveLayout() async {
@@ -875,6 +995,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       _layoutDirty = false;
       _editingLayout = false;
     });
+    _syncVolumeIntercept();
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Touch layout saved!')),
     );
@@ -888,6 +1009,7 @@ class _ControllerScreenState extends State<ControllerScreen> {
       _layoutDirty = false;
       _editingLayout = false;
     });
+    _syncVolumeIntercept();
   }
 
   void _onElementMoved(String id, double relX, double relY) {
@@ -1037,6 +1159,9 @@ class _ControllerScreenState extends State<ControllerScreen> {
                       onSelect: (id) => setState(() => _selectedControlId = id),
                       onElementMoved: _onElementMoved,
                       onMenuPressed: _openGameMenu,
+                      mixer: _mixer,
+                      touchLook: _inputConfig.touchLook,
+                      externalActiveTargets: _mixer.activeVolumeTargets,
                     ),
                   ),
                 ),
@@ -1251,221 +1376,333 @@ class _ControllerScreenState extends State<ControllerScreen> {
     );
   }
 
-  void _openGameMenu() {
-    showModalBottomSheet<void>(
-      context: context,
-      backgroundColor: C.panel,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        side: BorderSide(color: C.line),
-      ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setMenuState) {
-          final up = _client.connected;
-          return SafeArea(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxHeight: MediaQuery.of(context).size.height * 0.90,
-              ),
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
-                child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Header with Status & Close
-                      Row(
+  Future<void> _openGameMenu() => _withModalPause(() async {
+        await showModalBottomSheet<void>(
+          context: context,
+          backgroundColor: C.panel,
+          isScrollControlled: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+            side: BorderSide(color: C.line),
+          ),
+          builder: (ctx) => StatefulBuilder(
+            builder: (ctx, setMenuState) {
+              final up = _client.connected;
+              final tl = _inputConfig.touchLook;
+              final vt = _inputConfig.volumeTriggers;
+              final upEff = vt.effectiveBinding(isUp: true, flipped: _flipped);
+              final downEff = vt.effectiveBinding(isUp: false, flipped: _flipped);
+              return SafeArea(
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: MediaQuery.of(context).size.height * 0.90,
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                    child: SingleChildScrollView(
+                      physics: const BouncingScrollPhysics(),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          RingOfLight(slot: _client.slot, live: up),
-                          const SizedBox(width: 10),
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                          // Header with Status & Close
+                          Row(
                             children: [
-                              Text(
-                                up ? 'PLAYER ${_client.slot + 1}' : 'NOT CONNECTED',
-                                style: display(15, spacing: 1.5),
+                              RingOfLight(slot: _client.slot, live: up),
+                              const SizedBox(width: 10),
+                              Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    up ? 'PLAYER ${_client.slot + 1}' : 'NOT CONNECTED',
+                                    style: display(15, spacing: 1.5),
+                                  ),
+                                  Text(
+                                    up ? (_physical ?? widget.name) : 'Searching...',
+                                    style: mono(11, color: C.mute),
+                                  ),
+                                ],
                               ),
-                              Text(
-                                up ? (_physical ?? widget.name) : 'Searching...',
-                                style: mono(11, color: C.mute),
+                              const Spacer(),
+                              if (up) LinkChip(bluetooth: _client.bluetooth, rttMs: _client.rttMs),
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.close, color: C.ink, size: 20),
+                                visualDensity: VisualDensity.compact,
+                                tooltip: 'Resume',
+                                onPressed: () => Navigator.of(ctx).pop(),
                               ),
                             ],
                           ),
-                          const Spacer(),
-                          if (up) LinkChip(bluetooth: _client.bluetooth, rttMs: _client.rttMs),
-                          const SizedBox(width: 8),
-                          IconButton(
-                            icon: const Icon(Icons.close, color: C.ink, size: 20),
-                            visualDensity: VisualDensity.compact,
-                            tooltip: 'Resume',
-                            onPressed: () => Navigator.of(ctx).pop(),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
+                          const SizedBox(height: 12),
 
-                      // Quick Actions Grid
-                      Row(
-                        children: [
-                          Expanded(
-                            child: _menuActionCard(
-                              title: 'Resume',
-                              subtitle: 'Back to game',
-                              icon: Icons.play_arrow,
-                              color: C.lime,
-                              onTap: () => Navigator.of(ctx).pop(),
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _menuActionCard(
-                              title: 'Edit Controls',
-                              subtitle: 'Move & scale buttons',
-                              icon: Icons.dashboard_customize_outlined,
-                              color: C.cyan,
-                              onTap: () {
-                                Navigator.of(ctx).pop();
-                                _startLayoutEdit();
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _menuActionCard(
-                              title: _showOverlay ? 'Hide Controls' : 'Show Controls',
-                              subtitle: _showOverlay ? 'Readout view' : 'Touch overlay',
-                              icon: _showOverlay ? Icons.visibility_off_outlined : Icons.visibility_outlined,
-                              color: C.a,
-                              onTap: () {
-                                Navigator.of(ctx).pop();
-                                setState(() => _showOverlay = !_showOverlay);
-                              },
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: _menuActionCard(
-                              title: 'Flip Screen',
-                              subtitle: '180° rotation',
-                              icon: Icons.screen_rotation_outlined,
-                              color: C.y,
-                              onTap: () {
-                                _flip();
-                                setMenuState(() {});
-                              },
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Motion Card with Direct Settings Access
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                        decoration: BoxDecoration(
-                          color: C.panel2,
-                          borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: C.line),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Row(
-                              children: [
-                                Icon(Icons.screen_rotation, size: 20, color: _motionOn ? C.lime : C.mute),
-                                const SizedBox(width: 10),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      Text('Motion / Gyroscope', style: display(14)),
-                                      Text(
-                                        _motionOn
-                                            ? 'Tilt & rotate phone for Cemu / BotW shrines'
-                                            : 'Motion sensing disabled',
-                                        style: mono(11, color: C.mute),
-                                      ),
-                                    ],
-                                  ),
+                          // Quick Actions Grid
+                          Row(
+                            children: [
+                              Expanded(
+                                child: _menuActionCard(
+                                  title: 'Resume',
+                                  subtitle: 'Back to game',
+                                  icon: Icons.play_arrow,
+                                  color: C.lime,
+                                  onTap: () => Navigator.of(ctx).pop(),
                                 ),
-                                Switch(
-                                  value: _motionOn,
-                                  activeThumbColor: C.lime,
-                                  onChanged: (v) {
-                                    setState(() => _setMotion(v));
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _menuActionCard(
+                                  title: 'Edit Controls',
+                                  subtitle: 'Move & scale buttons',
+                                  icon: Icons.dashboard_customize_outlined,
+                                  color: C.cyan,
+                                  onTap: () {
+                                    Navigator.of(ctx).pop();
+                                    _startLayoutEdit();
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _menuActionCard(
+                                  title: _showOverlay ? 'Hide Controls' : 'Show Controls',
+                                  subtitle: _showOverlay ? 'Readout view' : 'Touch overlay',
+                                  icon: _showOverlay ? Icons.visibility_off_outlined : Icons.visibility_outlined,
+                                  color: C.a,
+                                  onTap: () {
+                                    Navigator.of(ctx).pop();
+                                    setState(() => _showOverlay = !_showOverlay);
+                                  },
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: _menuActionCard(
+                                  title: 'Flip Screen',
+                                  subtitle: '180° rotation',
+                                  icon: Icons.screen_rotation_outlined,
+                                  color: C.y,
+                                  onTap: () {
+                                    _flip();
                                     setMenuState(() {});
                                   },
                                 ),
-                              ],
-                            ),
-                            const Divider(color: C.line, height: 16),
-                            Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                TextButton.icon(
-                                  icon: const Icon(Icons.tune, size: 18, color: C.cyan),
-                                  label: Text('MOTION & GYRO SETTINGS', style: display(11.5, color: C.cyan, spacing: 1.2)),
-                                  onPressed: () {
-                                    Navigator.of(ctx).pop();
-                                    _openMotionSettingsDialog();
-                                  },
-                                ),
-                                TextButton.icon(
-                                  icon: const Icon(Icons.sports_esports_outlined, size: 18, color: C.ink),
-                                  label: Text('HARDWARE CALIBRATION', style: display(11.5, color: C.ink, spacing: 1.2)),
-                                  onPressed: () {
-                                    Navigator.of(ctx).pop();
-                                    _openCalibration();
-                                  },
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-
-                      // Disconnect & Leave Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: OutlinedButton.icon(
-                          icon: const Icon(Icons.power_settings_new, color: C.b, size: 18),
-                          label: Text('DISCONNECT & LEAVE', style: display(12, color: C.b, spacing: 1.5)),
-                          style: OutlinedButton.styleFrom(
-                            side: const BorderSide(color: C.b),
-                            padding: const EdgeInsets.symmetric(vertical: 10),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                            ],
                           ),
-                          onPressed: () {
-                            Navigator.of(ctx).pop();
-                            Navigator.of(context).pop();
-                          },
-                        ),
+                          const SizedBox(height: 12),
+
+                          // Custom Triggers & Touch-Look Card
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: C.panel2,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: C.cyan.withAlpha(85)),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.swipe_outlined, size: 20, color: tl.enabled ? C.lime : C.mute),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Touch-Look Camera', style: display(14)),
+                                          Text(
+                                            tl.enabled
+                                                ? '${tl.mode.label} · ${tl.zone.label}${tl.hideRightStick ? ' · Stick hidden' : ''}'
+                                                : 'Drag empty screen area for camera off',
+                                            style: mono(10.5, color: C.mute),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Switch(
+                                      value: tl.enabled,
+                                      activeThumbColor: C.lime,
+                                      onChanged: (v) {
+                                        final next = _inputConfig.clone();
+                                        next.touchLook.enabled = v;
+                                        _inputStore.save(next);
+                                        _applyInputConfig(next);
+                                        setMenuState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                const Divider(color: C.line, height: 12),
+                                Row(
+                                  children: [
+                                    Icon(Icons.volume_up_outlined, size: 20, color: vt.enabled ? C.cyan : C.mute),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Volume Key Triggers', style: display(14)),
+                                          Text(
+                                            vt.enabled
+                                                ? 'VOL+ ${upEff.target.shortLabel} (${upEff.mode.label}) · VOL- ${downEff.target.shortLabel} (${downEff.mode.label})'
+                                                : 'Disabled (normal Android volume)',
+                                            style: mono(10.5, color: C.mute),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Switch(
+                                      value: vt.enabled,
+                                      activeThumbColor: C.lime,
+                                      onChanged: (v) {
+                                        final next = _inputConfig.clone();
+                                        next.volumeTriggers.enabled = v;
+                                        _inputStore.save(next);
+                                        _applyInputConfig(next);
+                                        setMenuState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                const Divider(color: C.line, height: 12),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    TextButton.icon(
+                                      icon: const Icon(Icons.gamepad_outlined, size: 18, color: C.cyan),
+                                      label: Text('VOLUME TRIGGERS', style: display(11.5, color: C.cyan, spacing: 1.1)),
+                                      onPressed: () {
+                                        Navigator.of(ctx).pop();
+                                        _openInputSettingsDialog(initialTab: 0);
+                                      },
+                                    ),
+                                    TextButton.icon(
+                                      icon: const Icon(Icons.swipe_outlined, size: 18, color: C.lime),
+                                      label: Text('TOUCH-LOOK TUNING', style: display(11.5, color: C.lime, spacing: 1.1)),
+                                      onPressed: () {
+                                        Navigator.of(ctx).pop();
+                                        _openInputSettingsDialog(initialTab: 1);
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Motion Card with Direct Settings Access
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                            decoration: BoxDecoration(
+                              color: C.panel2,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: C.line),
+                            ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.screen_rotation, size: 20, color: _motionOn ? C.lime : C.mute),
+                                    const SizedBox(width: 10),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text('Motion / Gyroscope', style: display(14)),
+                                          Text(
+                                            _motionOn
+                                                ? 'Tilt & rotate phone for Cemu / BotW shrines'
+                                                : 'Motion sensing disabled',
+                                            style: mono(11, color: C.mute),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    Switch(
+                                      value: _motionOn,
+                                      activeThumbColor: C.lime,
+                                      onChanged: (v) {
+                                        setState(() => _setMotion(v));
+                                        setMenuState(() {});
+                                      },
+                                    ),
+                                  ],
+                                ),
+                                const Divider(color: C.line, height: 16),
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    TextButton.icon(
+                                      icon: const Icon(Icons.tune, size: 18, color: C.cyan),
+                                      label: Text('MOTION & GYRO SETTINGS', style: display(11.5, color: C.cyan, spacing: 1.2)),
+                                      onPressed: () {
+                                        Navigator.of(ctx).pop();
+                                        _openMotionSettingsDialog();
+                                      },
+                                    ),
+                                    TextButton.icon(
+                                      icon: const Icon(Icons.sports_esports_outlined, size: 18, color: C.ink),
+                                      label: Text('HARDWARE CALIBRATION', style: display(11.5, color: C.ink, spacing: 1.2)),
+                                      onPressed: () {
+                                        Navigator.of(ctx).pop();
+                                        _openCalibration();
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Disconnect & Leave Button
+                          SizedBox(
+                            width: double.infinity,
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.power_settings_new, color: C.b, size: 18),
+                              label: Text('DISCONNECT & LEAVE', style: display(12, color: C.b, spacing: 1.5)),
+                              style: OutlinedButton.styleFrom(
+                                side: const BorderSide(color: C.b),
+                                padding: const EdgeInsets.symmetric(vertical: 10),
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                              ),
+                              onPressed: () {
+                                Navigator.of(ctx).pop();
+                                Navigator.of(context).pop();
+                              },
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
+              );
+            },
+          ),
+        );
+      });
 
-  void _openMotionSettingsDialog() {
-    showMotionSettingsSheet(
-      context: context,
-      initialCal: _motionCal,
-      isConnected: true,
-      motionOn: _motionOn,
-      onMotionToggled: (v) => setState(() => _setMotion(v)),
-      onCalChanged: (c) => setState(() => _motionCal = c),
-    );
-  }
+  Future<void> _openInputSettingsDialog({int initialTab = 0}) =>
+      _withModalPause(() => showInputSettingsSheet(
+            context: context,
+            initialConfig: _inputConfig,
+            initialTab: initialTab,
+            onChanged: _applyInputConfig,
+          ));
+
+  Future<void> _openMotionSettingsDialog() =>
+      _withModalPause(() => showMotionSettingsSheet(
+            context: context,
+            initialCal: _motionCal,
+            isConnected: true,
+            motionOn: _motionOn,
+            onMotionToggled: (v) => setState(() => _setMotion(v)),
+            onCalChanged: (c) => setState(() => _motionCal = c),
+          ));
 
   /// Shown instead of the touch controls: the logo, which pad is live, and its values.
   Widget _hiddenView() {

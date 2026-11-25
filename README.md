@@ -39,6 +39,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 - A virtual Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
 - Customizable touch controls on the phone (reposition, scale, toggle visibility, adjust opacity, haptics, and presets), or a real controller plugged into it.
+- Physical **Volume Up / Volume Down** key triggers (map to RT/LT, bumpers, face buttons, etc. with Hold or Toggle mode and Flip-180 auto-swap) and **Touch-Look** empty-screen swipe camera steering (`RX`/`RY`).
 - Clean, unobstructed full-screen touch gameplay with a customizable floating menu button and Android Back button popup menu.
 - Advanced Motion & Gyroscope tuning (~100 Hz): pure hardware gyro with accelerometer fallback toggle, zero-point drift calibration, and axis inversion (Pitch, Yaw, Roll) for Breath of the Wild apparatus shrines.
 - Motion settings accessible both from the main menu and during gameplay.
@@ -202,6 +203,13 @@ The mobile app includes an interactive on-screen touch control customization sys
   - **Retro / 2D Arcade**: Enlarged D-pad and buttons with analog sticks hidden.
 - **Persistent storage**: Layouts are automatically saved to your device and restored across app restarts.
 - **Accessing the editor**: Tap **CONTROLS** in the main menu header, or choose **Edit Controls** from the in-game popup menu.
+
+### Volume Key Triggers & Touch-Look Camera
+
+Open **INPUT** in the main menu header (or **VOLUME TRIGGERS** / **TOUCH-LOOK TUNING** inside the in-game menu) to configure:
+
+- **Physical Volume Key Triggers**: Map the phone's **Volume Up** and **Volume Down** buttons to any Xbox 360 control (such as `RT`/`LT` triggers, `RB`/`LB`, `ABXY`, `L3`/`R3`, or D-Pad) with per-key **Hold** or **Toggle** mode, optional **Auto-Swap on Flip Screen (180°)**, and haptic feedback. Volume keys work normally for Android audio outside active gameplay or when set to **System Volume (Off)**.
+- **Touch-Look Camera**: Drag empty screen space to steer the virtual Right Stick (`RX`/`RY`) without touching the stick circle. Choose between **Swipe Relatif (Trackpad)** (camera moves while your finger slides and stops when still, with configurable deadzone boost) and **Floating Stick** (virtual origin under your thumb), set active area (**Right Half** or **Full Screen**), sensitivity (`0.3x`–`3.0x`), axis inversion, and auto-hiding the on-screen Right Stick.
 
 ## Run in the background
 
