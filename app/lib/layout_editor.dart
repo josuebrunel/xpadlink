@@ -357,134 +357,138 @@ class LayoutBottomToolbar extends StatelessWidget {
           BoxShadow(color: Colors.black45, blurRadius: 16, offset: Offset(0, 4)),
         ],
       ),
-      child: LayoutBuilder(
-        builder: (context, c) => SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: ConstrainedBox(
-            constraints: BoxConstraints(minWidth: c.maxWidth),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Element switcher
-                    IconButton(
-                      icon: const Icon(Icons.chevron_left, size: 20, color: C.ink),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Previous control',
-                      onPressed: onPrev,
-                    ),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(minWidth: 104),
-                      child: Center(
-                        child: Text(
-                          ControlId.displayName(selectedElem.id),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: display(13, color: C.lime, spacing: 0.8),
+      child: Material(
+        type: MaterialType.transparency,
+        child: LayoutBuilder(
+          builder: (context, c) => SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: ConstrainedBox(
+              constraints: BoxConstraints(minWidth: c.maxWidth),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Element switcher
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left, size: 20, color: C.ink),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Previous control',
+                        onPressed: onPrev,
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(minWidth: 104),
+                        child: Center(
+                          child: Text(
+                            ControlId.displayName(selectedElem.id),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: display(13, color: C.lime, spacing: 0.8),
+                          ),
                         ),
                       ),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.chevron_right, size: 20, color: C.ink),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Next control',
-                      onPressed: onNext,
-                    ),
+                      IconButton(
+                        icon: const Icon(Icons.chevron_right, size: 20, color: C.ink),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Next control',
+                        onPressed: onNext,
+                      ),
 
-                    if (canGroup && onToggleGroupMode != null) ...[
-                      const SizedBox(width: 4),
-                      Tooltip(
-                        message: groupMode
-                            ? 'Group mode: moves/scales entire cluster (tap for single button)'
-                            : 'Solo mode: moves/scales single button (tap for whole group)',
-                        child: InkWell(
-                          onTap: onToggleGroupMode,
-                          borderRadius: BorderRadius.circular(7),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 8, vertical: 4),
-                            decoration: BoxDecoration(
-                              color:
-                                  groupMode ? C.lime.withAlpha(32) : C.panel2,
+                      if (canGroup && onToggleGroupMode != null) ...[
+                        const SizedBox(width: 4),
+                        Tooltip(
+                          message: groupMode
+                              ? 'Group mode: moves/scales entire cluster (tap for single button)'
+                              : 'Solo mode: moves/scales single button (tap for whole group)',
+                          child: Material(
+                            color: groupMode ? C.lime.withAlpha(32) : C.panel2,
+                            shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(7),
-                              border: Border.all(
+                              side: BorderSide(
                                 color: groupMode ? C.lime : C.line,
                               ),
                             ),
-                            child: Text(
-                              groupMode ? 'GROUP' : 'SOLO',
-                              style: mono(
-                                10.5,
-                                color: groupMode ? C.lime : C.cyan,
-                                w: FontWeight.w700,
+                            child: InkWell(
+                              onTap: onToggleGroupMode,
+                              borderRadius: BorderRadius.circular(7),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 8, vertical: 4),
+                                child: Text(
+                                  groupMode ? 'GROUP' : 'SOLO',
+                                  style: mono(
+                                    10.5,
+                                    color: groupMode ? C.lime : C.cyan,
+                                    w: FontWeight.w700,
+                                  ),
+                                ),
                               ),
                             ),
                           ),
                         ),
+                      ],
+
+                      Container(
+                        width: 1,
+                        height: 22,
+                        margin: const EdgeInsets.symmetric(horizontal: 8),
+                        color: C.line,
+                      ),
+
+                      // Scale controls (5% steps)
+                      Text('SCALE', style: mono(10, color: C.mute, spacing: 1)),
+                      const SizedBox(width: 4),
+                      IconButton(
+                        icon: const Icon(Icons.remove, size: 16, color: C.ink),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Shrink (-5%)',
+                        onPressed: onScaleDown,
+                      ),
+                      Text(
+                        '${(selectedElem.scale * 100).round()}%',
+                        style: mono(11.5, color: C.ink, w: FontWeight.w600),
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.add, size: 16, color: C.ink),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: 'Enlarge (+5%)',
+                        onPressed: onScaleUp,
                       ),
                     ],
-
-                    Container(
-                      width: 1,
-                      height: 22,
-                      margin: const EdgeInsets.symmetric(horizontal: 8),
-                      color: C.line,
-                    ),
-
-                    // Scale controls (5% steps)
-                    Text('SCALE', style: mono(10, color: C.mute, spacing: 1)),
-                    const SizedBox(width: 4),
-                    IconButton(
-                      icon: const Icon(Icons.remove, size: 16, color: C.ink),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Shrink (-5%)',
-                      onPressed: onScaleDown,
-                    ),
-                    Text(
-                      '${(selectedElem.scale * 100).round()}%',
-                      style: mono(11.5, color: C.ink, w: FontWeight.w600),
-                    ),
-                    IconButton(
-                      icon: const Icon(Icons.add, size: 16, color: C.ink),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: 'Enlarge (+5%)',
-                      onPressed: onScaleUp,
-                    ),
-                  ],
-                ),
-                Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Visibility toggle
-                    IconButton(
-                      icon: Icon(
-                        selectedElem.visible
-                            ? Icons.visibility_outlined
-                            : Icons.visibility_off_outlined,
-                        size: 20,
-                        color: selectedElem.visible ? C.ink : C.b,
+                  ),
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Visibility toggle
+                      IconButton(
+                        icon: Icon(
+                          selectedElem.visible
+                              ? Icons.visibility_outlined
+                              : Icons.visibility_off_outlined,
+                          size: 20,
+                          color: selectedElem.visible ? C.ink : C.b,
+                        ),
+                        visualDensity: VisualDensity.compact,
+                        tooltip:
+                            selectedElem.visible ? 'Hide control' : 'Show control',
+                        onPressed: onToggleVisibility,
                       ),
-                      visualDensity: VisualDensity.compact,
-                      tooltip:
-                          selectedElem.visible ? 'Hide control' : 'Show control',
-                      onPressed: onToggleVisibility,
-                    ),
-                    const SizedBox(width: 4),
+                      const SizedBox(width: 4),
 
-                    // Reset element
-                    IconButton(
-                      icon: const Icon(Icons.refresh, size: 20, color: C.mute),
-                      visualDensity: VisualDensity.compact,
-                      tooltip: groupMode && canGroup
-                          ? 'Reset group position & scale'
-                          : 'Reset position & scale',
-                      onPressed: onReset,
-                    ),
-                  ],
-                ),
-              ],
+                      // Reset element
+                      IconButton(
+                        icon: const Icon(Icons.refresh, size: 20, color: C.mute),
+                        visualDensity: VisualDensity.compact,
+                        tooltip: groupMode && canGroup
+                            ? 'Reset group position & scale'
+                            : 'Reset position & scale',
+                        onPressed: onReset,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

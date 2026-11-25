@@ -233,4 +233,61 @@ void main() {
     expect(cfg.getElement(ControlId.lt).relX, 0.10);
     expect(cfg.getElement(ControlId.btnX).scale, 1.0);
   });
+
+  test('GROUP scaleControl shifts cluster rigidly at borders without collapsing spacing', () {
+    final cfg = PadLayoutConfig.defaultXbox();
+    for (var i = 0; i < 20; i++) {
+      cfg.scaleControl(ControlId.dpadDown, 0.05, groupMode: true);
+    }
+    final upY = cfg.getElement(ControlId.dpadUp).relY;
+    final leftY = cfg.getElement(ControlId.dpadLeft).relY;
+    final downY = cfg.getElement(ControlId.dpadDown).relY;
+
+    expect(downY, closeTo(0.98, 0.0001));
+    // Upper and lower arms must stay equidistant from the horizontal center line
+    expect((leftY - upY), closeTo((downY - leftY), 0.001));
+    expect((downY - leftY), closeTo(0.26, 0.001));
+  });
+
+  test('GROUP scaleControl expands un-maxed members in mixed-scale groups', () {
+    final cfg = PadLayoutConfig.defaultXbox();
+    cfg.getElement(ControlId.btnX).scale = 2.0;
+    final startB = cfg.getElement(ControlId.btnB).relX;
+    final startX = cfg.getElement(ControlId.btnX).relX;
+
+    cfg.scaleControl(ControlId.btnX, 0.20, groupMode: true);
+    expect(cfg.getElement(ControlId.btnX).scale, 2.0);
+    expect(cfg.getElement(ControlId.btnB).scale, 1.2);
+    expect(cfg.getElement(ControlId.btnB).relX, greaterThan(startB));
+    expect(cfg.getElement(ControlId.btnX).relX, closeTo(startX, 0.0001));
+  });
+
+  test('fromJson backfills empty or missing elem.id from map key', () {
+    final restored = PadLayoutConfig.fromJson({
+      'version': 2,
+      'elements': {
+        'lt': {'relX': 0.15, 'relY': 0.12, 'scale': 1.1, 'visible': true},
+      },
+    });
+    expect(restored.getElement(ControlId.lt).id, ControlId.lt);
+    final reserialized = restored.toJson()['elements'] as Map<String, dynamic>;
+    expect((reserialized[ControlId.lt] as Map)['id'], ControlId.lt);
+  });
+
+  test('btnGuide clears menuButton vertically in defaultXbox and claw presets', () {
+    for (final cfg in [
+      PadLayoutConfig.defaultXbox(),
+      PadLayoutConfig.playStation(),
+      PadLayoutConfig.southpaw(),
+      PadLayoutConfig.claw(),
+      PadLayoutConfig.retro2D(),
+    ]) {
+      final menu = cfg.getElement(ControlId.menuButton);
+      final guide = cfg.getElement(ControlId.btnGuide);
+      final menuH = 0.13 * 0.9 * menu.scale * 0.95;
+      final menuBottom = menuH; // top clamped to 0.0 because relY=0.05 < menuH/2
+      final guideTop = guide.relY - (0.13 * 0.95 * guide.scale) / 2;
+      expect(guideTop, greaterThan(menuBottom));
+    }
+  });
 }

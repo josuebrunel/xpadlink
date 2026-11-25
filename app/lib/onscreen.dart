@@ -639,8 +639,8 @@ class OnScreenPad extends StatelessWidget {
             onTap: () => onSelect?.call(id),
             onPanUpdate: (dx, dy) {
               if (onElementMoved == null) return;
-              var newRelX = (left + elemW / 2 + dx) / w;
-              var newRelY = (top + elemH / 2 + dy) / h;
+              var newRelX = elem.relX + dx / w;
+              var newRelY = elem.relY + dy / h;
               if (cfg.snapToGrid) {
                 const step = 0.025; // 2.5% grid
                 newRelX = (newRelX / step).round() * step;

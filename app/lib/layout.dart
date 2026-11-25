@@ -279,17 +279,39 @@ class PadLayoutConfig {
     cx /= ids.length;
     cy /= ids.length;
 
-    final anchor = getElement(id);
-    final oldScale = anchor.scale;
-    final nextScale = _roundScale(oldScale + delta);
-    final ratio = oldScale > 0 ? nextScale / oldScale : 1.0;
+    final nextPos = <String, ({double x, double y, double scale})>{};
+    var minX = double.infinity;
+    var maxX = -double.infinity;
+    var minY = double.infinity;
+    var maxY = -double.infinity;
 
     for (final m in ids) {
       final el = getElement(m);
-      el.scale = _roundScale(el.scale + delta);
-      el.relX = (cx + (el.relX - cx) * ratio).clamp(0.02, 0.98);
-      el.relY = (cy + (el.relY - cy) * ratio).clamp(0.02, 0.98);
+      final oldElScale = el.scale;
+      final nextElScale = _roundScale(oldElScale + delta);
+      final elRatio = oldElScale > 0 ? nextElScale / oldElScale : 1.0;
+      final nx = cx + (el.relX - cx) * elRatio;
+      final ny = cy + (el.relY - cy) * elRatio;
+      nextPos[m] = (x: nx, y: ny, scale: nextElScale);
+      minX = math.min(minX, nx);
+      maxX = math.max(maxX, nx);
+      minY = math.min(minY, ny);
+      maxY = math.max(maxY, ny);
     }
+
+    var shiftX = 0.0;
+    if (minX < 0.02) shiftX = 0.02 - minX;
+    if (maxX + shiftX > 0.98) shiftX = 0.98 - maxX;
+    var shiftY = 0.0;
+    if (minY < 0.02) shiftY = 0.02 - minY;
+    if (maxY + shiftY > 0.98) shiftY = 0.98 - maxY;
+
+    nextPos.forEach((m, p) {
+      final el = getElement(m);
+      el.scale = p.scale;
+      el.relX = (p.x + shiftX).clamp(0.02, 0.98);
+      el.relY = (p.y + shiftY).clamp(0.02, 0.98);
+    });
   }
 
   /// Toggles visibility of [id] (or all members of its group when [groupMode]
@@ -352,7 +374,15 @@ class PadLayoutConfig {
         } else if (key == ControlId.legacyCenter) {
           legacyCenter = elem;
         } else if (ControlId.all.contains(key)) {
-          map[key] = elem;
+          map[key] = elem.id.isEmpty
+              ? ControlElementLayout(
+                  id: key,
+                  relX: elem.relX,
+                  relY: elem.relY,
+                  scale: elem.scale,
+                  visible: elem.visible,
+                )
+              : elem;
         }
       }
     }
@@ -494,7 +524,7 @@ class PadLayoutConfig {
             id: ControlId.lt, relX: 0.10, relY: 0.08),
         ControlId.lb: ControlElementLayout(
             id: ControlId.lb, relX: 0.24, relY: 0.08),
-        ..._centerCluster(cx: 0.50, cy: 0.17),
+        ..._centerCluster(cx: 0.50, cy: 0.19),
         ControlId.rb: ControlElementLayout(
             id: ControlId.rb, relX: 0.76, relY: 0.08),
         ControlId.rt: ControlElementLayout(
@@ -540,7 +570,7 @@ class PadLayoutConfig {
               id: ControlId.lt, relX: 0.10, relY: 0.08),
           ControlId.lb: ControlElementLayout(
               id: ControlId.lb, relX: 0.24, relY: 0.08),
-          ..._centerCluster(cx: 0.50, cy: 0.17),
+          ..._centerCluster(cx: 0.50, cy: 0.19),
           ControlId.rb: ControlElementLayout(
               id: ControlId.rb, relX: 0.76, relY: 0.08),
           ControlId.rt: ControlElementLayout(
@@ -582,7 +612,7 @@ class PadLayoutConfig {
               id: ControlId.rt, relX: 0.10, relY: 0.08),
           ControlId.rb: ControlElementLayout(
               id: ControlId.rb, relX: 0.24, relY: 0.08),
-          ..._centerCluster(cx: 0.50, cy: 0.17),
+          ..._centerCluster(cx: 0.50, cy: 0.19),
           ControlId.lb: ControlElementLayout(
               id: ControlId.lb, relX: 0.76, relY: 0.08),
           ControlId.lt: ControlElementLayout(
@@ -628,7 +658,7 @@ class PadLayoutConfig {
               id: ControlId.rt, relX: 0.91, relY: 0.07, scale: 1.1),
           ControlId.rb: ControlElementLayout(
               id: ControlId.rb, relX: 0.91, relY: 0.22, scale: 1.1),
-          ..._centerCluster(cx: 0.50, cy: 0.16, scale: 0.9),
+          ..._centerCluster(cx: 0.50, cy: 0.19, scale: 0.9),
           ControlId.leftStick: ControlElementLayout(
               id: ControlId.leftStick, relX: 0.18, relY: 0.50, scale: 1.0),
           ControlId.l3: ControlElementLayout(
@@ -668,7 +698,7 @@ class PadLayoutConfig {
               id: ControlId.lt, relX: 0.12, relY: 0.10, scale: 1.0),
           ControlId.lb: ControlElementLayout(
               id: ControlId.lb, relX: 0.26, relY: 0.10, scale: 1.0),
-          ..._centerCluster(cx: 0.50, cy: 0.17),
+          ..._centerCluster(cx: 0.50, cy: 0.19),
           ControlId.rb: ControlElementLayout(
               id: ControlId.rb, relX: 0.74, relY: 0.10, scale: 1.0),
           ControlId.rt: ControlElementLayout(
