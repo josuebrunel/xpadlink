@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'input_config.dart';
 import 'layout.dart';
 import 'protocol.dart';
 import 'theme.dart';
@@ -20,6 +22,7 @@ class HoldButton extends StatefulWidget {
     this.child,
     this.fontSize,
     this.hapticsEnabled = false,
+    this.externalActive = false,
   });
 
   final String label;
@@ -34,6 +37,7 @@ class HoldButton extends StatefulWidget {
   final Widget? child;
   final double? fontSize;
   final bool hapticsEnabled;
+  final bool externalActive;
 
   @override
   State<HoldButton> createState() => _HoldButtonState();
@@ -55,6 +59,14 @@ class _HoldButtonState extends State<HoldButton> {
   Widget build(BuildContext context) {
     final face = widget.color;
     final radius = widget.round ? null : BorderRadius.circular(widget.h * 0.34);
+    final active = _down || widget.externalActive;
+    final extOnly = widget.externalActive && !_down;
+    final glassFill = extOnly
+        ? C.cyan.withAlpha(75)
+        : (_down ? C.lime.withAlpha(90) : Colors.white.withAlpha(16));
+    final borderColor =
+        extOnly ? C.cyan : (_down ? C.lime : Colors.white.withAlpha(68));
+
     return Listener(
       behavior: HitTestBehavior.opaque,
       onPointerDown: (_) => _set(true),
@@ -66,23 +78,21 @@ class _HoldButtonState extends State<HoldButton> {
         height: widget.h,
         alignment: Alignment.center,
         decoration: BoxDecoration(
-          color: face != null
-              ? face.withAlpha(_down ? 255 : 215)
-              : (_down ? C.lime.withAlpha(90) : Colors.white.withAlpha(16)),
+          color: face != null ? face.withAlpha(active ? 255 : 215) : glassFill,
           shape: widget.round ? BoxShape.circle : BoxShape.rectangle,
           borderRadius: radius,
           border: face != null
-              ? null
-              : Border.all(
-                  color: _down ? C.lime : Colors.white.withAlpha(68),
-                  width: 1.5),
+              ? (extOnly ? Border.all(color: C.cyan, width: 2) : null)
+              : Border.all(color: borderColor, width: 1.5),
           boxShadow: face != null
               ? [
                   BoxShadow(
-                      color: face.withAlpha(_down ? 150 : 70),
-                      blurRadius: _down ? 22 : 12)
+                      color: (extOnly ? C.cyan : face).withAlpha(active ? 150 : 70),
+                      blurRadius: active ? 22 : 12)
                 ]
-              : null,
+              : (extOnly
+                  ? [BoxShadow(color: C.cyan.withAlpha(110), blurRadius: 14)]
+                  : null),
         ),
         child: widget.child ??
             Text(widget.label,
@@ -190,8 +200,290 @@ class _StickState extends State<Stick> {
   }
 }
 
+/// Empty-space drag layer that translates finger drags into right-stick (RX/RY)
+/// camera motion without disturbing controls sitting above it.
+class TouchLookLayer extends StatefulWidget {
+  const TouchLookLayer({
+    super.key,
+    required this.width,
+    required this.height,
+    required this.config,
+    required this.onChanged,
+  });
+
+  final double width;
+  final double height;
+  final TouchLookConfig config;
+  final void Function(double x, double y, bool active) onChanged;
+
+  @override
+  State<TouchLookLayer> createState() => _TouchLookLayerState();
+}
+
+class _TouchLookLayerState extends State<TouchLookLayer> {
+  int? _activePointer;
+  Offset? _anchor;
+  Offset? _pointerPos;
+  Offset _knobOffset = Offset.zero;
+  double _velX = 0;
+  double _velY = 0;
+  final Stopwatch _sw = Stopwatch()..start();
+  int _lastMoveMs = 0;
+  Timer? _decayTimer;
+
+  @override
+  void didUpdateWidget(TouchLookLayer oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final disabled = !widget.config.enabled && oldWidget.config.enabled;
+    final modeChanged = widget.config.mode != oldWidget.config.mode;
+    final zoneChanged = widget.config.zone != oldWidget.config.zone;
+    if (disabled || modeChanged || zoneChanged) {
+      _resetInternal(notifyState: false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _decayTimer?.cancel();
+    _decayTimer = null;
+    if (_activePointer != null) {
+      _activePointer = null;
+      widget.onChanged(0, 0, false);
+    }
+    super.dispose();
+  }
+
+  void _resetInternal({required bool notifyState}) {
+    _decayTimer?.cancel();
+    _decayTimer = null;
+    final wasActive = _activePointer != null;
+    _activePointer = null;
+    _anchor = null;
+    _pointerPos = null;
+    _knobOffset = Offset.zero;
+    _velX = 0;
+    _velY = 0;
+    if (wasActive) {
+      widget.onChanged(0, 0, false);
+    }
+    if (notifyState && mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onPointerDown(PointerDownEvent e) {
+    if (!widget.config.enabled || _activePointer != null) return;
+    if (widget.config.zone == TouchLookZone.rightHalf &&
+        e.localPosition.dx < widget.width * 0.5) {
+      return;
+    }
+
+    _activePointer = e.pointer;
+    _anchor = e.localPosition;
+    _pointerPos = e.localPosition;
+    _knobOffset = Offset.zero;
+    _velX = 0;
+    _velY = 0;
+    _lastMoveMs = _sw.elapsedMilliseconds;
+
+    if (widget.config.mode == TouchLookMode.relativeSwipe) {
+      _decayTimer?.cancel();
+      _decayTimer = Timer.periodic(
+        const Duration(milliseconds: 16),
+        (_) => _tickRelative(),
+      );
+    }
+    if (widget.config.showVisualFeedback && mounted) {
+      setState(() {});
+    }
+  }
+
+  void _onPointerMove(PointerMoveEvent e) {
+    if (e.pointer != _activePointer) return;
+
+    if (widget.config.mode == TouchLookMode.floatingStick) {
+      final anchor = _anchor;
+      if (anchor == null) return;
+      final dx = e.localPosition.dx - anchor.dx;
+      final dy = e.localPosition.dy - anchor.dy;
+      final out = TouchLookMath.computeFloatingStick(
+        dx: dx,
+        dy: dy,
+        canvasHeight: widget.height,
+        sensitivity: widget.config.sensitivity,
+        invertX: widget.config.invertX,
+        invertY: widget.config.invertY,
+      );
+      widget.onChanged(out.x, out.y, true);
+
+      if (widget.config.showVisualFeedback && mounted) {
+        final maxR = math.max(
+          40.0,
+          (widget.height * 0.16) / math.max(0.4, widget.config.sensitivity),
+        );
+        var kx = dx / maxR;
+        var ky = dy / maxR;
+        final kDist = math.sqrt(kx * kx + ky * ky);
+        if (kDist > 1.0) {
+          kx /= kDist;
+          ky /= kDist;
+        }
+        setState(() => _knobOffset = Offset(kx * 30.0, ky * 30.0));
+      }
+      return;
+    }
+
+    // Relative swipe trackpad mode.
+    final nowMs = _sw.elapsedMilliseconds;
+    final dtMs = (nowMs - _lastMoveMs).clamp(4, 50);
+    _lastMoveMs = nowMs;
+
+    final h = math.max(1.0, widget.height);
+    final vx = (e.delta.dx / h) * (1000.0 / dtMs) * 0.42 * widget.config.sensitivity;
+    final vy = (e.delta.dy / h) * (1000.0 / dtMs) * 0.42 * widget.config.sensitivity;
+    _velX = _velX * 0.35 + vx * 0.65;
+    _velY = _velY * 0.35 + vy * 0.65;
+
+    final out = TouchLookMath.computeRelativeVelocity(
+      vx: _velX,
+      vy: _velY,
+      deadzoneBoost: widget.config.deadzoneBoost,
+      invertX: widget.config.invertX,
+      invertY: widget.config.invertY,
+    );
+    widget.onChanged(out.x, out.y, out.x != 0.0 || out.y != 0.0);
+
+    if (widget.config.showVisualFeedback && mounted) {
+      setState(() => _pointerPos = e.localPosition);
+    }
+  }
+
+  void _tickRelative() {
+    if (!mounted || _activePointer == null) {
+      _decayTimer?.cancel();
+      _decayTimer = null;
+      return;
+    }
+    if (_sw.elapsedMilliseconds - _lastMoveMs > 28) {
+      _velX *= 0.68;
+      _velY *= 0.68;
+    }
+    final out = TouchLookMath.computeRelativeVelocity(
+      vx: _velX,
+      vy: _velY,
+      deadzoneBoost: widget.config.deadzoneBoost,
+      invertX: widget.config.invertX,
+      invertY: widget.config.invertY,
+    );
+    final active = out.x != 0.0 || out.y != 0.0;
+    if (!active && _velX.abs() < 0.005 && _velY.abs() < 0.005) {
+      _velX = 0;
+      _velY = 0;
+    }
+    widget.onChanged(out.x, out.y, active);
+  }
+
+  void _onPointerEnd(PointerEvent e) {
+    if (e.pointer == _activePointer) {
+      _resetInternal(notifyState: true);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final showVis = widget.config.showVisualFeedback;
+    final rightOnly = widget.config.zone == TouchLookZone.rightHalf;
+
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: _onPointerDown,
+      onPointerMove: _onPointerMove,
+      onPointerUp: _onPointerEnd,
+      onPointerCancel: _onPointerEnd,
+      child: SizedBox(
+        width: widget.width,
+        height: widget.height,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            if (showVis && rightOnly)
+              Positioned(
+                left: widget.width * 0.5,
+                top: 12,
+                bottom: 12,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 1,
+                    color: C.cyan.withAlpha(_activePointer != null ? 95 : 28),
+                  ),
+                ),
+              ),
+            if (showVis &&
+                widget.config.mode == TouchLookMode.floatingStick &&
+                _anchor != null)
+              Positioned(
+                left: _anchor!.dx - 46,
+                top: _anchor!.dy - 46,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 92,
+                    height: 92,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: C.cyan.withAlpha(18),
+                      border: Border.all(
+                        color: C.cyan.withAlpha(140),
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Stack(
+                      children: [
+                        Positioned(
+                          left: 46 - 16 + _knobOffset.dx,
+                          top: 46 - 16 + _knobOffset.dy,
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: C.cyan.withAlpha(80),
+                              border: Border.all(color: C.cyan, width: 1.5),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            if (showVis &&
+                widget.config.mode == TouchLookMode.relativeSwipe &&
+                _pointerPos != null)
+              Positioned(
+                left: _pointerPos!.dx - 14,
+                top: _pointerPos!.dy - 14,
+                child: IgnorePointer(
+                  child: Container(
+                    width: 28,
+                    height: 28,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      color: C.cyan.withAlpha(36),
+                      border: Border.all(color: C.cyan, width: 1.5),
+                    ),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// Fully customizable touch controller pad.
-/// In normal play mode, writes straight into the shared [PadState].
+/// In normal play mode, writes through [mixer] (if provided) or straight into
+/// the shared [PadState].
 /// In edit mode, allows dragging, selecting, scaling, and reconfiguring controls.
 class OnScreenPad extends StatelessWidget {
   const OnScreenPad({
@@ -203,6 +495,9 @@ class OnScreenPad extends StatelessWidget {
     this.onSelect,
     this.onElementMoved,
     this.onMenuPressed,
+    this.mixer,
+    this.touchLook,
+    this.externalActiveTargets = const <TriggerTarget>{},
   });
 
   final PadState state;
@@ -212,11 +507,36 @@ class OnScreenPad extends StatelessWidget {
   final ValueChanged<String>? onSelect;
   final void Function(String id, double relX, double relY)? onElementMoved;
   final VoidCallback? onMenuPressed;
+  final InputMixer? mixer;
+  final TouchLookConfig? touchLook;
+  final Set<TriggerTarget> externalActiveTargets;
+
+  void _setButton(int bit, bool down) {
+    final m = mixer;
+    if (m != null) {
+      m.setTouchButton(bit, down);
+      m.applyTo(state);
+    } else {
+      state.setButton(bit, down);
+    }
+  }
+
+  void _setTouchLook(double x, double y, bool active) {
+    final m = mixer;
+    if (m != null) {
+      m.setTouchLook(x, y, active: active);
+      m.applyTo(state);
+    } else {
+      state.rx = active ? axisToInt16(x) : 0;
+      state.ry = active ? axisToInt16(y) : 0;
+    }
+  }
 
   Widget _btn(
     String label,
     int bit,
     double size, {
+    TriggerTarget target = TriggerTarget.none,
     Color? color,
     bool round = true,
     double? w,
@@ -231,14 +551,19 @@ class OnScreenPad extends StatelessWidget {
         color: color,
         child: child,
         hapticsEnabled: haptics,
+        externalActive:
+            !editMode && target != TriggerTarget.none && externalActiveTargets.contains(target),
         onChanged: (d) {
-          if (!editMode) state.setButton(bit, d);
+          if (!editMode) _setButton(bit, d);
         },
       );
 
   @override
   Widget build(BuildContext context) {
     final cfg = layout ?? PadLayoutConfig.defaultXbox();
+    final tl = touchLook;
+    final tlActive = !editMode && (tl?.enabled ?? false);
+    final hideRightStick = tlActive && tl!.hideRightStick;
 
     return LayoutBuilder(builder: (context, c) {
       final w = c.maxWidth;
@@ -250,13 +575,20 @@ class OnScreenPad extends StatelessWidget {
       final baseShW = h * 0.26;
       final baseShH = h * 0.11;
 
-      Widget shoulder(String l, void Function(bool) f, double width, double height) =>
+      Widget shoulder(
+        String l,
+        TriggerTarget target,
+        void Function(bool) f,
+        double width,
+        double height,
+      ) =>
           HoldButton(
             label: l,
             w: width,
             h: height,
             round: false,
             hapticsEnabled: cfg.hapticsEnabled,
+            externalActive: !editMode && externalActiveTargets.contains(target),
             onChanged: (d) {
               if (!editMode) f(d);
             },
@@ -323,7 +655,15 @@ class OnScreenPad extends StatelessWidget {
         id: ControlId.lt,
         elemW: ltW,
         elemH: ltH,
-        child: shoulder('LT', (d) => state.lt = d ? 255 : 0, ltW, ltH),
+        child: shoulder('LT', TriggerTarget.lt, (d) {
+          final m = mixer;
+          if (m != null) {
+            m.setTouchLt(d ? 255 : 0);
+            m.applyTo(state);
+          } else {
+            state.lt = d ? 255 : 0;
+          }
+        }, ltW, ltH),
       );
 
       // 2. LB (Left Bumper)
@@ -334,7 +674,13 @@ class OnScreenPad extends StatelessWidget {
         id: ControlId.lb,
         elemW: lbW,
         elemH: lbH,
-        child: shoulder('LB', (d) => state.setButton(Btn.lb, d), lbW, lbH),
+        child: shoulder(
+          'LB',
+          TriggerTarget.lb,
+          (d) => _setButton(Btn.lb, d),
+          lbW,
+          lbH,
+        ),
       );
 
       // 3. RT (Right Trigger)
@@ -345,7 +691,15 @@ class OnScreenPad extends StatelessWidget {
         id: ControlId.rt,
         elemW: rtW,
         elemH: rtH,
-        child: shoulder('RT', (d) => state.rt = d ? 255 : 0, rtW, rtH),
+        child: shoulder('RT', TriggerTarget.rt, (d) {
+          final m = mixer;
+          if (m != null) {
+            m.setTouchRt(d ? 255 : 0);
+            m.applyTo(state);
+          } else {
+            state.rt = d ? 255 : 0;
+          }
+        }, rtW, rtH),
       );
 
       // 4. RB (Right Bumper)
@@ -356,7 +710,13 @@ class OnScreenPad extends StatelessWidget {
         id: ControlId.rb,
         elemW: rbW,
         elemH: rbH,
-        child: shoulder('RB', (d) => state.setButton(Btn.rb, d), rbW, rbH),
+        child: shoulder(
+          'RB',
+          TriggerTarget.rb,
+          (d) => _setButton(Btn.rb, d),
+          rbW,
+          rbH,
+        ),
       );
 
       // 5. Left Stick
@@ -370,8 +730,14 @@ class OnScreenPad extends StatelessWidget {
           size: lsSize,
           onChanged: (x, y) {
             if (!editMode) {
-              state.lx = axisToInt16(x);
-              state.ly = axisToInt16(y);
+              final m = mixer;
+              if (m != null) {
+                m.setTouchLeftStick(axisToInt16(x), axisToInt16(y));
+                m.applyTo(state);
+              } else {
+                state.lx = axisToInt16(x);
+                state.ly = axisToInt16(y);
+              }
             }
           },
         ),
@@ -380,20 +746,28 @@ class OnScreenPad extends StatelessWidget {
       // 6. Right Stick
       final rsElem = cfg.getElement(ControlId.rightStick);
       final rsSize = baseStick * rsElem.scale;
-      final rsWidget = buildPositioned(
-        id: ControlId.rightStick,
-        elemW: rsSize,
-        elemH: rsSize,
-        child: Stick(
-          size: rsSize,
-          onChanged: (x, y) {
-            if (!editMode) {
-              state.rx = axisToInt16(x);
-              state.ry = axisToInt16(y);
-            }
-          },
-        ),
-      );
+      final rsWidget = hideRightStick
+          ? const SizedBox.shrink()
+          : buildPositioned(
+              id: ControlId.rightStick,
+              elemW: rsSize,
+              elemH: rsSize,
+              child: Stick(
+                size: rsSize,
+                onChanged: (x, y) {
+                  if (!editMode) {
+                    final m = mixer;
+                    if (m != null) {
+                      m.setTouchRightStick(axisToInt16(x), axisToInt16(y));
+                      m.applyTo(state);
+                    } else {
+                      state.rx = axisToInt16(x);
+                      state.ry = axisToInt16(y);
+                    }
+                  }
+                },
+              ),
+            );
 
       // 7. L3 (Stick Click)
       final l3Elem = cfg.getElement(ControlId.l3);
@@ -404,7 +778,10 @@ class OnScreenPad extends StatelessWidget {
         elemW: l3W,
         elemH: l3H,
         child: _btn('L3', Btn.l3, l3H,
-            round: false, w: l3W, haptics: cfg.hapticsEnabled),
+            target: TriggerTarget.l3,
+            round: false,
+            w: l3W,
+            haptics: cfg.hapticsEnabled),
       );
 
       // 8. R3 (Stick Click)
@@ -416,7 +793,10 @@ class OnScreenPad extends StatelessWidget {
         elemW: r3W,
         elemH: r3H,
         child: _btn('R3', Btn.r3, r3H,
-            round: false, w: r3W, haptics: cfg.hapticsEnabled),
+            target: TriggerTarget.r3,
+            round: false,
+            w: r3W,
+            haptics: cfg.hapticsEnabled),
       );
 
       // 9. D-Pad
@@ -435,22 +815,30 @@ class OnScreenPad extends StatelessWidget {
                 left: dpBtn,
                 top: 0,
                 child: _btn('▲', Btn.dUp, dpBtn,
-                    round: false, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.dUp,
+                    round: false,
+                    haptics: cfg.hapticsEnabled)),
             Positioned(
                 left: dpBtn,
                 bottom: 0,
                 child: _btn('▼', Btn.dDown, dpBtn,
-                    round: false, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.dDown,
+                    round: false,
+                    haptics: cfg.hapticsEnabled)),
             Positioned(
                 left: 0,
                 top: dpBtn,
                 child: _btn('◀', Btn.dLeft, dpBtn,
-                    round: false, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.dLeft,
+                    round: false,
+                    haptics: cfg.hapticsEnabled)),
             Positioned(
                 right: 0,
                 top: dpBtn,
                 child: _btn('▶', Btn.dRight, dpBtn,
-                    round: false, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.dRight,
+                    round: false,
+                    haptics: cfg.hapticsEnabled)),
           ]),
         ),
       );
@@ -471,22 +859,30 @@ class OnScreenPad extends StatelessWidget {
                 left: abBtn,
                 top: 0,
                 child: _btn('Y', Btn.y, abBtn,
-                    color: C.y, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.y,
+                    color: C.y,
+                    haptics: cfg.hapticsEnabled)),
             Positioned(
                 left: abBtn,
                 bottom: 0,
                 child: _btn('A', Btn.a, abBtn,
-                    color: C.a, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.a,
+                    color: C.a,
+                    haptics: cfg.hapticsEnabled)),
             Positioned(
                 left: 0,
                 top: abBtn,
                 child: _btn('X', Btn.x, abBtn,
-                    color: C.x, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.x,
+                    color: C.x,
+                    haptics: cfg.hapticsEnabled)),
             Positioned(
                 right: 0,
                 top: abBtn,
                 child: _btn('B', Btn.b, abBtn,
-                    color: C.b, haptics: cfg.hapticsEnabled)),
+                    target: TriggerTarget.b,
+                    color: C.b,
+                    haptics: cfg.hapticsEnabled)),
           ]),
         ),
       );
@@ -505,16 +901,23 @@ class OnScreenPad extends StatelessWidget {
         elemH: cTotalH,
         child: Row(mainAxisSize: MainAxisSize.min, children: [
           _btn('VIEW', Btn.back, cBtnH,
-              round: false, w: cBtnW, haptics: cfg.hapticsEnabled),
+              target: TriggerTarget.back,
+              round: false,
+              w: cBtnW,
+              haptics: cfg.hapticsEnabled),
           SizedBox(width: cGap),
           _btn('', Btn.guide, cGuide,
+              target: TriggerTarget.guide,
               haptics: cfg.hapticsEnabled,
               child: ClipOval(
                   child: Image.asset('assets/logo.png',
                       width: cGuide * 0.84, height: cGuide * 0.84))),
           SizedBox(width: cGap),
           _btn('MENU', Btn.start, cBtnH,
-              round: false, w: cBtnW, haptics: cfg.hapticsEnabled),
+              target: TriggerTarget.start,
+              round: false,
+              w: cBtnW,
+              haptics: cfg.hapticsEnabled),
         ]),
       );
 
@@ -559,7 +962,7 @@ class OnScreenPad extends StatelessWidget {
         ),
       );
 
-      final stack = Stack(children: [
+      final controlsStack = Stack(children: [
         ltWidget,
         lbWidget,
         rtWidget,
@@ -575,13 +978,24 @@ class OnScreenPad extends StatelessWidget {
       ]);
 
       if (editMode) {
-        return stack;
+        return controlsStack;
       }
 
-      return Opacity(
-        opacity: cfg.opacity.clamp(0.1, 1.0),
-        child: stack,
-      );
+      return Stack(children: [
+        if (tlActive)
+          Positioned.fill(
+            child: TouchLookLayer(
+              width: w,
+              height: h,
+              config: tl!,
+              onChanged: _setTouchLook,
+            ),
+          ),
+        Opacity(
+          opacity: cfg.opacity.clamp(0.1, 1.0),
+          child: controlsStack,
+        ),
+      ]);
     });
   }
 }
