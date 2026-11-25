@@ -805,6 +805,7 @@ class _ControllerScreenState extends State<ControllerScreen>
   final _mixer = InputMixer();
   int _modalDepth = 0;
   bool _editingLayout = false;
+  bool _groupMode = false;
   String _selectedControlId = ControlId.leftStick;
   bool _layoutDirty = false;
   bool _showOverlay = true;
@@ -1038,9 +1039,7 @@ class _ControllerScreenState extends State<ControllerScreen>
 
   void _onElementMoved(String id, double relX, double relY) {
     setState(() {
-      final elem = _layout.getElement(id);
-      elem.relX = relX;
-      elem.relY = relY;
+      _layout.moveControl(id, relX, relY, groupMode: _groupMode);
       _selectedControlId = id;
       _layoutDirty = true;
     });
@@ -1048,24 +1047,21 @@ class _ControllerScreenState extends State<ControllerScreen>
 
   void _changeScale(double delta) {
     setState(() {
-      final elem = _layout.getElement(_selectedControlId);
-      elem.scale = ((elem.scale + delta) * 100).round() / 100;
-      elem.scale = elem.scale.clamp(0.5, 2.0);
+      _layout.scaleControl(_selectedControlId, delta, groupMode: _groupMode);
       _layoutDirty = true;
     });
   }
 
   void _toggleVisibility() {
     setState(() {
-      final elem = _layout.getElement(_selectedControlId);
-      elem.visible = !elem.visible;
+      _layout.toggleVisibility(_selectedControlId, groupMode: _groupMode);
       _layoutDirty = true;
     });
   }
 
   void _resetSelectedElement() {
     setState(() {
-      _layout.resetElement(_selectedControlId);
+      _layout.resetControl(_selectedControlId, groupMode: _groupMode);
       _layoutDirty = true;
     });
   }
@@ -1179,6 +1175,7 @@ class _ControllerScreenState extends State<ControllerScreen>
                       state: _client.state,
                       layout: _layout,
                       editMode: _editingLayout,
+                      groupMode: _groupMode,
                       selectedId: _selectedControlId,
                       onSelect: (id) => setState(() => _selectedControlId = id),
                       onElementMoved: _onElementMoved,
@@ -1207,10 +1204,14 @@ class _ControllerScreenState extends State<ControllerScreen>
                   bottom: 8,
                   child: LayoutBottomToolbar(
                     selectedElem: selectedElem,
+                    groupMode: _groupMode,
+                    canGroup: ControlId.groupOf(_selectedControlId) != null,
+                    onToggleGroupMode: () =>
+                        setState(() => _groupMode = !_groupMode),
                     onPrev: () => _cycleElement(-1),
                     onNext: () => _cycleElement(1),
-                    onScaleDown: () => _changeScale(-0.1),
-                    onScaleUp: () => _changeScale(0.1),
+                    onScaleDown: () => _changeScale(-0.05),
+                    onScaleUp: () => _changeScale(0.05),
                     onToggleVisibility: _toggleVisibility,
                     onReset: _resetSelectedElement,
                   ),

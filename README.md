@@ -189,9 +189,9 @@ A pad that reports an analog trigger axis is read as analog. The L2/R2 key is on
 ## Customizable touch controls
 
 The mobile app includes an interactive on-screen touch control customization system:
-- **Reposition any control**: Drag sticks, D-pad, face buttons (ABXY), bumpers, triggers, center buttons, and the floating menu button anywhere on screen.
-- **Per-control scaling**: Resize buttons and sticks between 50% and 200% to fit your hand size and screen layout.
-- **Visibility toggles**: Hide unused buttons (such as L3/R3 or analog sticks for retro games).
+- **Reposition any control individually**: Drag sticks, individual D-pad arrows, individual face buttons (`A`, `B`, `X`, `Y`), bumpers, triggers, `View`/`Guide`/`Menu`, `L3`/`R3`, and the floating menu button anywhere on screen.
+- **Per-button scaling & visibility**: Resize any individual button or stick between 50% and 200% (in 5% steps) and hide unused buttons independently.
+- **SOLO / GROUP editor toggle**: Customize one button at a time by default (**SOLO**), or switch to **GROUP** to move, resize, hide, or reset an entire cluster (`ABXY`, `D-Pad`, or `Center`) together.
 - **Transparency**: Adjust global button opacity from subtle (10%) to solid (100%).
 - **Haptic feedback**: Optional vibration feedback on button touches.
 - **Floating Menu Button**: A customizable floating `[ ≡ MENU ]` button opens the quick in-game menu during gameplay.

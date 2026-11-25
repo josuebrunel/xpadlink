@@ -20,6 +20,7 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
 
   PadLayoutConfig _config = PadLayoutConfig.defaultXbox();
   String _selectedId = ControlId.leftStick;
+  bool _groupMode = false;
   bool _dirty = false;
   bool _testingControls = false;
 
@@ -50,9 +51,7 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
 
   void _onElementMoved(String id, double relX, double relY) {
     setState(() {
-      final elem = _config.getElement(id);
-      elem.relX = relX;
-      elem.relY = relY;
+      _config.moveControl(id, relX, relY, groupMode: _groupMode);
       _selectedId = id;
       _dirty = true;
     });
@@ -60,24 +59,21 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
 
   void _changeScale(double delta) {
     setState(() {
-      final elem = _config.getElement(_selectedId);
-      elem.scale = ((elem.scale + delta) * 100).round() / 100;
-      elem.scale = elem.scale.clamp(0.5, 2.0);
+      _config.scaleControl(_selectedId, delta, groupMode: _groupMode);
       _dirty = true;
     });
   }
 
   void _toggleVisibility() {
     setState(() {
-      final elem = _config.getElement(_selectedId);
-      elem.visible = !elem.visible;
+      _config.toggleVisibility(_selectedId, groupMode: _groupMode);
       _dirty = true;
     });
   }
 
   void _resetSelected() {
     setState(() {
-      _config.resetElement(_selectedId);
+      _config.resetControl(_selectedId, groupMode: _groupMode);
       _dirty = true;
     });
   }
@@ -175,6 +171,7 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
                   state: _dummyState,
                   layout: _config,
                   editMode: !_testingControls,
+                  groupMode: _groupMode,
                   selectedId: _selectedId,
                   onSelect: (id) => setState(() => _selectedId = id),
                   onElementMoved: _onElementMoved,
@@ -197,10 +194,14 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
                   bottom: 8,
                   child: LayoutBottomToolbar(
                     selectedElem: selectedElem,
+                    groupMode: _groupMode,
+                    canGroup: ControlId.groupOf(_selectedId) != null,
+                    onToggleGroupMode: () =>
+                        setState(() => _groupMode = !_groupMode),
                     onPrev: () => _cycleElement(-1),
                     onNext: () => _cycleElement(1),
-                    onScaleDown: () => _changeScale(-0.1),
-                    onScaleUp: () => _changeScale(0.1),
+                    onScaleDown: () => _changeScale(-0.05),
+                    onScaleUp: () => _changeScale(0.05),
                     onToggleVisibility: _toggleVisibility,
                     onReset: _resetSelected,
                   ),
@@ -321,6 +322,9 @@ class LayoutBottomToolbar extends StatelessWidget {
   const LayoutBottomToolbar({
     super.key,
     required this.selectedElem,
+    this.groupMode = false,
+    this.canGroup = false,
+    this.onToggleGroupMode,
     required this.onPrev,
     required this.onNext,
     required this.onScaleDown,
@@ -330,6 +334,9 @@ class LayoutBottomToolbar extends StatelessWidget {
   });
 
   final ControlElementLayout selectedElem;
+  final bool groupMode;
+  final bool canGroup;
+  final VoidCallback? onToggleGroupMode;
   final VoidCallback onPrev;
   final VoidCallback onNext;
   final VoidCallback onScaleDown;
@@ -350,80 +357,137 @@ class LayoutBottomToolbar extends StatelessWidget {
           BoxShadow(color: Colors.black45, blurRadius: 16, offset: Offset(0, 4)),
         ],
       ),
-      child: Row(
-        children: [
-          // Element switcher
-          IconButton(
-            icon: const Icon(Icons.chevron_left, size: 20, color: C.ink),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Previous control',
-            onPressed: onPrev,
-          ),
-          ConstrainedBox(
-            constraints: const BoxConstraints(minWidth: 110),
-            child: Center(
-              child: Text(
-                ControlId.displayName(selectedElem.id),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: display(13, color: C.lime, spacing: 0.8),
-              ),
+      child: LayoutBuilder(
+        builder: (context, c) => SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minWidth: c.maxWidth),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Element switcher
+                    IconButton(
+                      icon: const Icon(Icons.chevron_left, size: 20, color: C.ink),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Previous control',
+                      onPressed: onPrev,
+                    ),
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(minWidth: 104),
+                      child: Center(
+                        child: Text(
+                          ControlId.displayName(selectedElem.id),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: display(13, color: C.lime, spacing: 0.8),
+                        ),
+                      ),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.chevron_right, size: 20, color: C.ink),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Next control',
+                      onPressed: onNext,
+                    ),
+
+                    if (canGroup && onToggleGroupMode != null) ...[
+                      const SizedBox(width: 4),
+                      Tooltip(
+                        message: groupMode
+                            ? 'Group mode: moves/scales entire cluster (tap for single button)'
+                            : 'Solo mode: moves/scales single button (tap for whole group)',
+                        child: InkWell(
+                          onTap: onToggleGroupMode,
+                          borderRadius: BorderRadius.circular(7),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 8, vertical: 4),
+                            decoration: BoxDecoration(
+                              color:
+                                  groupMode ? C.lime.withAlpha(32) : C.panel2,
+                              borderRadius: BorderRadius.circular(7),
+                              border: Border.all(
+                                color: groupMode ? C.lime : C.line,
+                              ),
+                            ),
+                            child: Text(
+                              groupMode ? 'GROUP' : 'SOLO',
+                              style: mono(
+                                10.5,
+                                color: groupMode ? C.lime : C.cyan,
+                                w: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+
+                    Container(
+                      width: 1,
+                      height: 22,
+                      margin: const EdgeInsets.symmetric(horizontal: 8),
+                      color: C.line,
+                    ),
+
+                    // Scale controls (5% steps)
+                    Text('SCALE', style: mono(10, color: C.mute, spacing: 1)),
+                    const SizedBox(width: 4),
+                    IconButton(
+                      icon: const Icon(Icons.remove, size: 16, color: C.ink),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Shrink (-5%)',
+                      onPressed: onScaleDown,
+                    ),
+                    Text(
+                      '${(selectedElem.scale * 100).round()}%',
+                      style: mono(11.5, color: C.ink, w: FontWeight.w600),
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.add, size: 16, color: C.ink),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: 'Enlarge (+5%)',
+                      onPressed: onScaleUp,
+                    ),
+                  ],
+                ),
+                Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Visibility toggle
+                    IconButton(
+                      icon: Icon(
+                        selectedElem.visible
+                            ? Icons.visibility_outlined
+                            : Icons.visibility_off_outlined,
+                        size: 20,
+                        color: selectedElem.visible ? C.ink : C.b,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                      tooltip:
+                          selectedElem.visible ? 'Hide control' : 'Show control',
+                      onPressed: onToggleVisibility,
+                    ),
+                    const SizedBox(width: 4),
+
+                    // Reset element
+                    IconButton(
+                      icon: const Icon(Icons.refresh, size: 20, color: C.mute),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: groupMode && canGroup
+                          ? 'Reset group position & scale'
+                          : 'Reset position & scale',
+                      onPressed: onReset,
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right, size: 20, color: C.ink),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Next control',
-            onPressed: onNext,
-          ),
-
-          const VerticalDivider(color: C.line, indent: 8, endIndent: 8),
-
-          // Scale controls
-          Text('SCALE', style: mono(10, color: C.mute, spacing: 1)),
-          const SizedBox(width: 4),
-          IconButton(
-            icon: const Icon(Icons.remove, size: 16, color: C.ink),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Shrink',
-            onPressed: onScaleDown,
-          ),
-          Text(
-            '${(selectedElem.scale * 100).round()}%',
-            style: mono(11.5, color: C.ink, w: FontWeight.w600),
-          ),
-          IconButton(
-            icon: const Icon(Icons.add, size: 16, color: C.ink),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Enlarge',
-            onPressed: onScaleUp,
-          ),
-
-          const Spacer(),
-
-          // Visibility toggle
-          IconButton(
-            icon: Icon(
-              selectedElem.visible
-                  ? Icons.visibility_outlined
-                  : Icons.visibility_off_outlined,
-              size: 20,
-              color: selectedElem.visible ? C.ink : C.b,
-            ),
-            visualDensity: VisualDensity.compact,
-            tooltip: selectedElem.visible ? 'Hide control' : 'Show control',
-            onPressed: onToggleVisibility,
-          ),
-          const SizedBox(width: 4),
-
-          // Reset element
-          IconButton(
-            icon: const Icon(Icons.refresh, size: 20, color: C.mute),
-            visualDensity: VisualDensity.compact,
-            tooltip: 'Reset position & scale',
-            onPressed: onReset,
-          ),
-        ],
+        ),
       ),
     );
   }
