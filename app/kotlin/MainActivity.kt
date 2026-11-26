@@ -81,6 +81,8 @@ class MainActivity : FlutterActivity() {
     private var volUpConsumedDown = false
     private var volDownConsumedDown = false
     private val accel = FloatArray(3)
+    private val padAccel = FloatArray(3)
+    private val padGyro = FloatArray(3)
     private var prevQ: FloatArray? = null
     private var prevQNs = 0L
 
@@ -392,17 +394,32 @@ class MainActivity : FlutterActivity() {
                 System.arraycopy(e.values, 0, accel, 0, 3)
                 return
             }
-            val gyro = if (e.sensor.type == Sensor.TYPE_GYROSCOPE) {
-                floatArrayOf(e.values[0], e.values[1], e.values[2])
+            val gx: Float
+            val gy: Float
+            val gz: Float
+            if (e.sensor.type == Sensor.TYPE_GYROSCOPE) {
+                gx = e.values[0]
+                gy = e.values[1]
+                gz = e.values[2]
             } else {
-                angularVelocity(e.values, e.timestamp) ?: return
+                val gyro = angularVelocity(e.values, e.timestamp) ?: return
+                gx = gyro[0]
+                gy = gyro[1]
+                gz = gyro[2]
             }
-            val a = toPadFrame(accel[0], accel[1], accel[2])
-            val g = toPadFrame(gyro[0], gyro[1], gyro[2])
-            val k = (180.0 / Math.PI).toFloat()
-            val gs = 1f / SensorManager.GRAVITY_EARTH
+            toPadFrame(accel[0], accel[1], accel[2], padAccel)
+            toPadFrame(gx, gy, gz, padGyro)
+            val k = 180.0 / Math.PI
+            val gs = 1.0 / SensorManager.GRAVITY_EARTH
             motionSink?.success(
-                listOf(a[0] * gs, a[1] * gs, a[2] * gs, g[0] * k, g[1] * k, g[2] * k).map { it.toDouble() }
+                doubleArrayOf(
+                    padAccel[0] * gs,
+                    padAccel[1] * gs,
+                    padAccel[2] * gs,
+                    padGyro[0] * k,
+                    padGyro[1] * k,
+                    padGyro[2] * k,
+                )
             )
         }
 
@@ -435,13 +452,29 @@ class MainActivity : FlutterActivity() {
     }
 
     /** Device axes are fixed to the portrait body; rotate them to what the user sees. */
-    private fun toPadFrame(x: Float, y: Float, z: Float): FloatArray {
+    private fun toPadFrame(x: Float, y: Float, z: Float, out: FloatArray) {
         @Suppress("DEPRECATION")
-        return when (windowManager.defaultDisplay.rotation) {
-            Surface.ROTATION_90 -> floatArrayOf(-y, x, z)
-            Surface.ROTATION_180 -> floatArrayOf(-x, -y, z)
-            Surface.ROTATION_270 -> floatArrayOf(y, -x, z)
-            else -> floatArrayOf(x, y, z)
+        when (windowManager.defaultDisplay.rotation) {
+            Surface.ROTATION_90 -> {
+                out[0] = -y
+                out[1] = x
+                out[2] = z
+            }
+            Surface.ROTATION_180 -> {
+                out[0] = -x
+                out[1] = -y
+                out[2] = z
+            }
+            Surface.ROTATION_270 -> {
+                out[0] = y
+                out[1] = -x
+                out[2] = z
+            }
+            else -> {
+                out[0] = x
+                out[1] = y
+                out[2] = z
+            }
         }
     }
 

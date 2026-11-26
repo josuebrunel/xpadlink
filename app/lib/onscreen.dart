@@ -907,6 +907,8 @@ class OnScreenPad extends StatelessWidget {
               'assets/logo.png',
               width: guideSize * 0.84,
               height: guideSize * 0.84,
+              cacheWidth: 192,
+              cacheHeight: 192,
             ),
           ),
         ),

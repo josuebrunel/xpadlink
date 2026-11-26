@@ -268,7 +268,13 @@ class _ConnectScreenState extends State<ConnectScreen>
     return Row(children: [
       ClipRRect(
         borderRadius: BorderRadius.circular(9),
-        child: Image.asset('assets/logo.png', width: 36, height: 36),
+        child: Image.asset(
+          'assets/logo.png',
+          width: 36,
+          height: 36,
+          cacheWidth: 108,
+          cacheHeight: 108,
+        ),
       ),
       const SizedBox(width: 12),
       Text.rich(TextSpan(children: [
@@ -1757,7 +1763,13 @@ class _ControllerScreenState extends State<ControllerScreen>
           ),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(24),
-            child: Image.asset('assets/logo.png', width: 84, height: 84),
+            child: Image.asset(
+              'assets/logo.png',
+              width: 84,
+              height: 84,
+              cacheWidth: 252,
+              cacheHeight: 252,
+            ),
           ),
         ),
         const SizedBox(height: 14),

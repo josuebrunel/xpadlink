@@ -10,8 +10,15 @@ class Log {
 
   /// Identical error messages are throttled so a failing 60 Hz send loop
   /// doesn't flood logcat.
+  static const maxThrottleEntries = 128;
   static final _lastByMsg = <String, DateTime>{};
   static const _throttle = Duration(seconds: 2);
+
+  @visibleForTesting
+  static int get trackedErrorCount => _lastByMsg.length;
+
+  @visibleForTesting
+  static void resetThrottleForTest() => _lastByMsg.clear();
 
   void d(String msg) => _out('D', msg);
   void i(String msg) => _out('I', msg);
@@ -22,6 +29,12 @@ class Log {
     final now = DateTime.now();
     final last = _lastByMsg[full];
     if (last != null && now.difference(last) < _throttle) return;
+    if (_lastByMsg.length >= maxThrottleEntries) {
+      _lastByMsg.removeWhere((_, t) => now.difference(t) >= _throttle);
+      if (_lastByMsg.length >= maxThrottleEntries) {
+        _lastByMsg.remove(_lastByMsg.keys.first);
+      }
+    }
     _lastByMsg[full] = now;
     _out('E', full);
     if (st != null) _out('E', st.toString());
