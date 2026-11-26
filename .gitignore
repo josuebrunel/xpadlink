@@ -4,3 +4,4 @@
 *.apk
 # A global "lib/" rule would otherwise hide the Flutter source
 !/app/lib/
+.worktrees/
