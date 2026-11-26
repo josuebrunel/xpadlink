@@ -88,7 +88,7 @@ s = s.replace("    buildTypes {", """    signingConfigs {
     }
 
     buildTypes {""", 1)
-s = s.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName(if (keystoreProps.containsKey("storeFile")) "release" else "debug")', 1)
+s = s.replace('signingConfig = signingConfigs.getByName("debug")', 'signingConfig = signingConfigs.getByName(if (keystoreProps.containsKey("storeFile")) "release" else "debug")\n            isMinifyEnabled = true\n            isShrinkResources = true', 1)
 open(p, "w").write(s)
 PY
 
