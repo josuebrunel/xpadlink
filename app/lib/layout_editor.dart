@@ -23,6 +23,7 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
   bool _groupMode = false;
   bool _dirty = false;
   bool _testingControls = false;
+  bool _hudCollapsed = false;
 
   @override
   void initState() {
@@ -161,12 +162,12 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
       backgroundColor: C.bg,
       body: ConsoleBackdrop(
         child: SafeArea(
+          top: false,
+          bottom: false,
           child: Stack(
             children: [
-              // Controller Canvas
+              // Controller Canvas (matches gameplay 1:1)
               Positioned.fill(
-                top: 56,
-                bottom: _testingControls ? 0 : 54,
                 child: OnScreenPad(
                   state: _dummyState,
                   layout: _config,
@@ -179,15 +180,16 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
               ),
 
               // Top Bar
-              Positioned(
-                top: 8,
-                left: 12,
-                right: 12,
-                child: _buildTopBar(),
-              ),
+              if (!_hudCollapsed || _testingControls)
+                Positioned(
+                  top: 8,
+                  left: 12,
+                  right: 12,
+                  child: _buildTopBar(),
+                ),
 
               // Bottom Control Toolbar (when in edit mode)
-              if (!_testingControls)
+              if (!_testingControls && !_hudCollapsed)
                 Positioned(
                   left: 12,
                   right: 12,
@@ -204,6 +206,14 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
                     onScaleUp: () => _changeScale(0.05),
                     onToggleVisibility: _toggleVisibility,
                     onReset: _resetSelected,
+                  ),
+                ),
+
+              if (!_testingControls && _hudCollapsed)
+                Align(
+                  alignment: Alignment.center,
+                  child: EditorCollapsedPill(
+                    onExpand: () => setState(() => _hudCollapsed = false),
                   ),
                 ),
             ],
@@ -280,12 +290,22 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
           ),
         ),
         const Spacer(),
+        if (!_testingControls) ...[
+          BarButton(
+            icon: Icons.fullscreen,
+            tooltip: 'Hide editor bars',
+            onPressed: () => setState(() => _hudCollapsed = true),
+          ),
+          const SizedBox(width: 8),
+        ],
         BarButton(
           icon: _testingControls ? Icons.edit_outlined : Icons.play_arrow_outlined,
           tooltip: _testingControls ? 'Return to editor' : 'Test touch buttons',
           on: _testingControls,
-          onPressed: () =>
-              setState(() => _testingControls = !_testingControls),
+          onPressed: () => setState(() {
+            _testingControls = !_testingControls;
+            if (_testingControls) _hudCollapsed = false;
+          }),
         ),
         const SizedBox(width: 8),
         BarButton(
@@ -313,6 +333,39 @@ class _LayoutEditorScreenState extends State<LayoutEditorScreen> {
           onPressed: _save,
         ),
       ],
+    );
+  }
+}
+
+/// Compact center pill shown while editor bars are collapsed so edge buttons stay reachable.
+class EditorCollapsedPill extends StatelessWidget {
+  const EditorCollapsedPill({super.key, required this.onExpand});
+
+  final VoidCallback onExpand;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: C.panel.withAlpha(220),
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(99),
+        side: BorderSide(color: C.lime.withAlpha(140)),
+      ),
+      child: InkWell(
+        onTap: onExpand,
+        borderRadius: BorderRadius.circular(99),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(Icons.tune, size: 16, color: C.lime),
+              const SizedBox(width: 6),
+              Text('TOOLS', style: display(11, color: C.lime, spacing: 1.4)),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

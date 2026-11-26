@@ -805,6 +805,7 @@ class _ControllerScreenState extends State<ControllerScreen>
   final _mixer = InputMixer();
   int _modalDepth = 0;
   bool _editingLayout = false;
+  bool _editorHudCollapsed = false;
   bool _groupMode = false;
   String _selectedControlId = ControlId.leftStick;
   bool _showOverlay = true;
@@ -1008,6 +1009,7 @@ class _ControllerScreenState extends State<ControllerScreen>
     setState(() {
       _showOverlay = true;
       _editingLayout = true;
+      _editorHudCollapsed = false;
     });
     _syncVolumeIntercept();
   }
@@ -1017,6 +1019,7 @@ class _ControllerScreenState extends State<ControllerScreen>
     if (!mounted) return;
     setState(() {
       _editingLayout = false;
+      _editorHudCollapsed = false;
     });
     _syncVolumeIntercept();
     ScaffoldMessenger.of(context).showSnackBar(
@@ -1030,6 +1033,7 @@ class _ControllerScreenState extends State<ControllerScreen>
     setState(() {
       _layout = loaded;
       _editingLayout = false;
+      _editorHudCollapsed = false;
     });
     _syncVolumeIntercept();
   }
@@ -1152,8 +1156,6 @@ class _ControllerScreenState extends State<ControllerScreen>
             child: Stack(children: [
               // Stays mounted while hidden, so a held touch isn't dropped mid-press.
               Positioned.fill(
-                top: _editingLayout ? 58 : (!_showOverlay ? 58 : 0),
-                bottom: _editingLayout ? 54 : 0,
                 child: IgnorePointer(
                   ignoring: !_showOverlay && !_editingLayout,
                   child: AnimatedOpacity(
@@ -1182,10 +1184,10 @@ class _ControllerScreenState extends State<ControllerScreen>
                 left: 12,
                 right: 12,
                 child: _editingLayout
-                    ? _editorBar()
+                    ? (_editorHudCollapsed ? const SizedBox.shrink() : _editorBar())
                     : (_showOverlay ? const SizedBox.shrink() : _bar()),
               ),
-              if (_editingLayout)
+              if (_editingLayout && !_editorHudCollapsed)
                 Positioned(
                   left: 12,
                   right: 12,
@@ -1202,6 +1204,13 @@ class _ControllerScreenState extends State<ControllerScreen>
                     onScaleUp: () => _changeScale(0.05),
                     onToggleVisibility: _toggleVisibility,
                     onReset: _resetSelectedElement,
+                  ),
+                ),
+              if (_editingLayout && _editorHudCollapsed)
+                Align(
+                  alignment: Alignment.center,
+                  child: EditorCollapsedPill(
+                    onExpand: () => setState(() => _editorHudCollapsed = false),
                   ),
                 ),
             ]),
@@ -1309,6 +1318,12 @@ class _ControllerScreenState extends State<ControllerScreen>
         ]),
       ),
       const Spacer(),
+      BarButton(
+        icon: Icons.fullscreen,
+        tooltip: 'Hide editor bars',
+        onPressed: () => setState(() => _editorHudCollapsed = true),
+      ),
+      const SizedBox(width: 8),
       BarButton(
         icon: Icons.layers_outlined,
         tooltip: 'Layout presets',
