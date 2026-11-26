@@ -54,7 +54,7 @@ void main() {
   });
 
   testWidgets(
-      'Retro 2D preset with hidden sticks keeps visible controls at non-zero size',
+      'Retro 2D preset with hidden sticks keeps visible controls full-size and interactive',
       (tester) async {
     final state = PadState();
     await tester.pumpWidget(_wrapPad(OnScreenPad(
@@ -64,8 +64,17 @@ void main() {
 
     expect(find.byType(Stick), findsNothing);
     expect(find.text('L3'), findsNothing);
+    expect(tester.getSize(find.byType(Opacity)), const Size(800, 400));
     expect(tester.getSize(find.text('A')).width, greaterThan(0));
     expect(tester.getSize(find.text('▲')).width, greaterThan(0));
     expect(tester.getSize(find.text('LT')).width, greaterThan(0));
+
+    final aGesture = await tester.startGesture(tester.getCenter(find.text('A')));
+    await tester.pump();
+    expect(state.buttons & Btn.a, Btn.a);
+
+    await aGesture.up();
+    await tester.pump();
+    expect(state.buttons & Btn.a, 0);
   });
 }

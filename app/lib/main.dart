@@ -1738,8 +1738,12 @@ class _ControllerScreenState extends State<ControllerScreen>
             initialCal: _motionCal,
             isConnected: true,
             motionOn: _motionOn,
-            onMotionToggled: (v) => setState(() => _setMotion(v)),
-            onCalChanged: (c) => setState(() => _motionCal = c),
+            onMotionToggled: (v) {
+              if (mounted) setState(() => _setMotion(v));
+            },
+            onCalChanged: (c) {
+              if (mounted) setState(() => _motionCal = c);
+            },
           ));
 
   /// Shown instead of the touch controls: the logo, which pad is live, and its values.
