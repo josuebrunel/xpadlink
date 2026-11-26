@@ -29,6 +29,9 @@ jobs:
           cache: false
       - name: generate the Flutter project
         run: ./app/setup.sh
+      - name: analyze and test
+        working-directory: app/xpadlink_app
+        run: flutter analyze --no-fatal-infos && flutter test
       # Without the signing secrets the build falls back to the debug key.
       # That is fine for test runs, but a release tag must never ship it, because
       # users could not update in place over an APK signed with a different key.
@@ -51,9 +54,12 @@ jobs:
             "$KEYSTORE_PASSWORD" "$KEYSTORE_PASSWORD" > key.properties
       - name: build
         working-directory: app/xpadlink_app
-        run: flutter build apk --release
+        run: flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/debug-info
       - name: rename
-        run: cp app/xpadlink_app/build/app/outputs/flutter-apk/app-release.apk xpadlink.apk
+        run: |
+          cp app/xpadlink_app/build/app/outputs/flutter-apk/app-arm64-v8a-release.apk xpadlink-arm64-v8a.apk
+          cp app/xpadlink_app/build/app/outputs/flutter-apk/app-armeabi-v7a-release.apk xpadlink-armeabi-v7a.apk
+          cp app/xpadlink_app/build/app/outputs/flutter-apk/app-x86_64-release.apk xpadlink-x86_64.apk
       # The release is created by GoReleaser in ci.yml, which may still be running.
       - name: attach to the release
         if: startsWith(github.ref, 'refs/tags/v')
@@ -64,11 +70,11 @@ jobs:
             gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break
             echo "waiting for release $GITHUB_REF_NAME ($i)"; sleep 15
           done
-          gh release upload "$GITHUB_REF_NAME" xpadlink.apk --clobber
+          gh release upload "$GITHUB_REF_NAME" xpadlink-arm64-v8a.apk xpadlink-armeabi-v7a.apk xpadlink-x86_64.apk --clobber
       # Test runs keep the APK for one day only, to spare Actions storage.
       - uses: actions/upload-artifact@v4
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         with:
           name: xpadlink-apk
-          path: xpadlink.apk
+          path: xpadlink-*.apk
           retention-days: 1

@@ -23,6 +23,9 @@ import android.view.InputDevice
 import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.Surface
+import android.view.View
+import android.view.WindowInsets
+import android.view.WindowInsetsController
 import android.view.WindowManager
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -70,7 +73,16 @@ class MainActivity : FlutterActivity() {
     private var btPermission: ((Boolean) -> Unit)? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private var motionSink: EventChannel.EventSink? = null
+    private var volumeSink: EventChannel.EventSink? = null
+    private var interceptVolUp = false
+    private var interceptVolDown = false
+    private var volUpHeld = false
+    private var volDownHeld = false
+    private var volUpConsumedDown = false
+    private var volDownConsumedDown = false
     private val accel = FloatArray(3)
+    private val padAccel = FloatArray(3)
+    private val padGyro = FloatArray(3)
     private var prevQ: FloatArray? = null
     private var prevQNs = 0L
 
@@ -107,10 +119,58 @@ class MainActivity : FlutterActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        applyImmersiveMode()
         Log.i(TAG, "MainActivity created")
         val im = getSystemService(INPUT_SERVICE) as InputManager
         im.registerInputDeviceListener(deviceListener, null)
         for (id in InputDevice.getDeviceIds()) logDevice("present", InputDevice.getDevice(id))
+    }
+
+    override fun onPause() {
+        releaseHeldVolumeKeys()
+        super.onPause()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            applyImmersiveMode()
+        } else {
+            releaseHeldVolumeKeys()
+        }
+    }
+
+    private fun releaseHeldVolumeKeys() {
+        val hadActive = volUpHeld || volDownHeld || interceptVolUp || interceptVolDown
+        volUpHeld = false
+        volDownHeld = false
+        volUpConsumedDown = false
+        volDownConsumedDown = false
+        if (hadActive) {
+            volumeSink?.success(mapOf("key" to "clear", "down" to false))
+        }
+    }
+
+    private fun applyImmersiveMode() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            window.setDecorFitsSystemWindows(false)
+            val controller = window.insetsController
+            if (controller != null) {
+                controller.hide(WindowInsets.Type.statusBars() or WindowInsets.Type.navigationBars())
+                controller.systemBarsBehavior =
+                    WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        } else {
+            @Suppress("DEPRECATION")
+            window.decorView.systemUiVisibility = (
+                View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+            )
+        }
     }
 
     /** BLUETOOTH_CONNECT is a runtime permission from Android 12. */
@@ -159,6 +219,7 @@ class MainActivity : FlutterActivity() {
     }
 
     override fun onDestroy() {
+        releaseHeldVolumeKeys()
         btClose()
         stopMotion()
         (getSystemService(INPUT_SERVICE) as InputManager).unregisterInputDeviceListener(deviceListener)
@@ -249,6 +310,26 @@ class MainActivity : FlutterActivity() {
                 }
             })
 
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/motion_config")
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "setFallbackEnabled" -> {
+                        val enabled = call.argument<Boolean>("enabled") ?: false
+                        useAccelFallback = enabled
+                        if (motionSink != null) {
+                            stopMotion()
+                            startMotion()
+                        }
+                        result.success(true)
+                    }
+                    "hasGyroscope" -> {
+                        val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
+                        result.success(sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE) != null)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
+
         EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/gamepad")
             .setStreamHandler(object : EventChannel.StreamHandler {
                 override fun onListen(args: Any?, events: EventChannel.EventSink?) {
@@ -259,6 +340,44 @@ class MainActivity : FlutterActivity() {
                 override fun onCancel(args: Any?) {
                     Log.i(TAG, "gamepad channel: Dart stopped listening")
                     sink = null
+                }
+            })
+
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/volume_config")
+            .setMethodCallHandler { call, result ->
+                if (call.method == "setConfig") {
+                    val up = call.argument<Boolean>("interceptUp") ?: false
+                    val down = call.argument<Boolean>("interceptDown") ?: false
+                    if (!up && volUpHeld) {
+                        volUpHeld = false
+                        volumeSink?.success(mapOf("key" to "up", "down" to false))
+                    }
+                    if (!down && volDownHeld) {
+                        volDownHeld = false
+                        volumeSink?.success(mapOf("key" to "down", "down" to false))
+                    }
+                    interceptVolUp = up
+                    interceptVolDown = down
+                    result.success(null)
+                } else {
+                    result.notImplemented()
+                }
+            }
+
+        EventChannel(flutterEngine.dartExecutor.binaryMessenger, "xpadlink/volume_keys")
+            .setStreamHandler(object : EventChannel.StreamHandler {
+                override fun onListen(args: Any?, events: EventChannel.EventSink?) {
+                    volumeSink = events
+                }
+
+                override fun onCancel(args: Any?) {
+                    interceptVolUp = false
+                    interceptVolDown = false
+                    volUpHeld = false
+                    volDownHeld = false
+                    volUpConsumedDown = false
+                    volDownConsumedDown = false
+                    volumeSink = null
                 }
             })
     }
@@ -275,17 +394,32 @@ class MainActivity : FlutterActivity() {
                 System.arraycopy(e.values, 0, accel, 0, 3)
                 return
             }
-            val gyro = if (e.sensor.type == Sensor.TYPE_GYROSCOPE) {
-                floatArrayOf(e.values[0], e.values[1], e.values[2])
+            val gx: Float
+            val gy: Float
+            val gz: Float
+            if (e.sensor.type == Sensor.TYPE_GYROSCOPE) {
+                gx = e.values[0]
+                gy = e.values[1]
+                gz = e.values[2]
             } else {
-                angularVelocity(e.values, e.timestamp) ?: return
+                val gyro = angularVelocity(e.values, e.timestamp) ?: return
+                gx = gyro[0]
+                gy = gyro[1]
+                gz = gyro[2]
             }
-            val a = toPadFrame(accel[0], accel[1], accel[2])
-            val g = toPadFrame(gyro[0], gyro[1], gyro[2])
-            val k = (180.0 / Math.PI).toFloat()
-            val gs = 1f / SensorManager.GRAVITY_EARTH
+            toPadFrame(accel[0], accel[1], accel[2], padAccel)
+            toPadFrame(gx, gy, gz, padGyro)
+            val k = 180.0 / Math.PI
+            val gs = 1.0 / SensorManager.GRAVITY_EARTH
             motionSink?.success(
-                listOf(a[0] * gs, a[1] * gs, a[2] * gs, g[0] * k, g[1] * k, g[2] * k).map { it.toDouble() }
+                doubleArrayOf(
+                    padAccel[0] * gs,
+                    padAccel[1] * gs,
+                    padAccel[2] * gs,
+                    padGyro[0] * k,
+                    padGyro[1] * k,
+                    padGyro[2] * k,
+                )
             )
         }
 
@@ -318,31 +452,56 @@ class MainActivity : FlutterActivity() {
     }
 
     /** Device axes are fixed to the portrait body; rotate them to what the user sees. */
-    private fun toPadFrame(x: Float, y: Float, z: Float): FloatArray {
+    private fun toPadFrame(x: Float, y: Float, z: Float, out: FloatArray) {
         @Suppress("DEPRECATION")
-        return when (windowManager.defaultDisplay.rotation) {
-            Surface.ROTATION_90 -> floatArrayOf(-y, x, z)
-            Surface.ROTATION_180 -> floatArrayOf(-x, -y, z)
-            Surface.ROTATION_270 -> floatArrayOf(y, -x, z)
-            else -> floatArrayOf(x, y, z)
+        when (windowManager.defaultDisplay.rotation) {
+            Surface.ROTATION_90 -> {
+                out[0] = -y
+                out[1] = x
+                out[2] = z
+            }
+            Surface.ROTATION_180 -> {
+                out[0] = -x
+                out[1] = -y
+                out[2] = z
+            }
+            Surface.ROTATION_270 -> {
+                out[0] = y
+                out[1] = -x
+                out[2] = z
+            }
+            else -> {
+                out[0] = x
+                out[1] = y
+                out[2] = z
+            }
         }
     }
+
+    private var useAccelFallback = false
 
     private fun startMotion() {
         val sm = getSystemService(Context.SENSOR_SERVICE) as SensorManager
         val acc = sm.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
-        val gyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
-            ?: sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
-            ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        val hardwareGyro = sm.getDefaultSensor(Sensor.TYPE_GYROSCOPE)
+        val gyro = if (!useAccelFallback && hardwareGyro != null) {
+            hardwareGyro
+        } else if (useAccelFallback) {
+            hardwareGyro
+                ?: sm.getDefaultSensor(Sensor.TYPE_GAME_ROTATION_VECTOR)
+                ?: sm.getDefaultSensor(Sensor.TYPE_ROTATION_VECTOR)
+        } else {
+            hardwareGyro
+        }
         if (gyro == null || acc == null) {
-            Log.w(TAG, "motion unavailable: turn-rate source=${gyro != null} accel=${acc != null}")
+            Log.w(TAG, "motion unavailable: hardwareGyro=${hardwareGyro != null} fallback=$useAccelFallback accel=${acc != null}")
             return
         }
         prevQ = null
-        val us = 16000 // ~60 Hz
+        val us = 10000 // ~100 Hz for low latency in Cemu/BotW
         sm.registerListener(motionListener, acc, us)
         sm.registerListener(motionListener, gyro, us)
-        Log.i(TAG, "motion started (turn rate from '${gyro.name}', accel='${acc.name}')")
+        Log.i(TAG, "motion started (turn rate from '${gyro.name}' [accelFallback=$useAccelFallback], accel='${acc.name}')")
     }
 
     private fun stopMotion() {
@@ -468,11 +627,43 @@ class MainActivity : FlutterActivity() {
     private fun setBit(bits: Int, bit: Int, on: Boolean) =
         if (on) bits or bit else bits and bit.inv()
 
+    private fun handleVolumeKey(isUp: Boolean, down: Boolean, repeatCount: Int): Boolean {
+        val intercept = if (isUp) interceptVolUp else interceptVolDown
+        val consumedDown = if (isUp) volUpConsumedDown else volDownConsumedDown
+        val held = if (isUp) volUpHeld else volDownHeld
+        val name = if (isUp) "up" else "down"
+
+        if (down && intercept) {
+            if (repeatCount > 0) return true
+            if (isUp) volUpConsumedDown = true else volDownConsumedDown = true
+            if (!held) {
+                if (isUp) volUpHeld = true else volDownHeld = true
+                volumeSink?.success(mapOf("key" to name, "down" to true))
+            }
+            return true
+        }
+        if (!down && consumedDown) {
+            if (isUp) volUpConsumedDown = false else volDownConsumedDown = false
+            if (held) {
+                if (isUp) volUpHeld = false else volDownHeld = false
+                volumeSink?.success(mapOf("key" to name, "down" to false))
+            }
+            return true
+        }
+        return false
+    }
+
     override fun dispatchKeyEvent(e: KeyEvent): Boolean {
         if (e.action != KeyEvent.ACTION_DOWN && e.action != KeyEvent.ACTION_UP) {
             return super.dispatchKeyEvent(e)
         }
         val down = e.action == KeyEvent.ACTION_DOWN
+
+        if (e.keyCode == KeyEvent.KEYCODE_VOLUME_UP || e.keyCode == KeyEvent.KEYCODE_VOLUME_DOWN) {
+            val isUp = e.keyCode == KeyEvent.KEYCODE_VOLUME_UP
+            return if (handleVolumeKey(isUp, down, e.repeatCount)) true else super.dispatchKeyEvent(e)
+        }
+
         val pad = isPad(e.source)
         if (pad) padDeviceId = e.deviceId
         noteDevice(e)

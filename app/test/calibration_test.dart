@@ -54,4 +54,46 @@ void main() {
     expect(out.accel[0], 0.5);
     expect(out.gyro[2], 1);
   });
+
+  test('motion inverts pitch, yaw, and roll with sensitivity multiplier', () {
+    final m = MotionCalibration(
+      invertPitch: true,
+      invertYaw: true,
+      invertRoll: true,
+      sensitivity: 2.0,
+    );
+    final inMotion = PadMotion([0.4, 0.8, 1.0], [10.0, 20.0, 30.0]);
+    final out = m.apply(inMotion);
+
+    // Pitch inverts accel y (a[1]) and gyro x (g[0])
+    expect(out.accel[1], -0.8);
+    expect(out.gyro[0], -20.0); // 10.0 * 2.0 negated
+
+    // Yaw inverts gyro y (g[1])
+    expect(out.gyro[1], -40.0); // 20.0 * 2.0 negated
+
+    // Roll inverts accel x (a[0]) and gyro z (g[2])
+    expect(out.accel[0], -0.4);
+    expect(out.gyro[2], -60.0); // 30.0 * 2.0 negated
+  });
+
+  test('motion calibration round trips through json', () {
+    final m = MotionCalibration(
+      gyroBias: [0.12, -0.34, 0.56],
+      invertPitch: true,
+      invertYaw: false,
+      invertRoll: true,
+      sensitivity: 1.5,
+      useAccelFallback: true,
+    );
+    final j = m.toJson();
+    final restored = MotionCalibration.fromJson(j);
+
+    expect(restored.gyroBias, [0.12, -0.34, 0.56]);
+    expect(restored.invertPitch, isTrue);
+    expect(restored.invertYaw, isFalse);
+    expect(restored.invertRoll, isTrue);
+    expect(restored.sensitivity, 1.5);
+    expect(restored.useAccelFallback, isTrue);
+  });
 }

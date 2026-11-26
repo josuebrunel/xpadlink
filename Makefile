@@ -2,7 +2,7 @@ TOKEN  ?= abc
 LISTEN ?= :9777
 BIN    := server/xpadlinkd
 
-.PHONY: help build run dry sim test vet fmt clean uinput-setup firewall app app-run app-clean
+.PHONY: help build run dry sim test vet fmt clean uinput-setup firewall app app-run app-release app-clean
 
 help: ## Show this help
 	@grep -E '^[a-zA-Z_-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  %-14s %s\n", $$1, $$2}'
@@ -47,6 +47,9 @@ app: ## Generate the Flutter Android project
 
 app-run: ## Run the app on a connected phone
 	cd app/xpadlink_app && flutter run
+
+app-release: ## Build split-per-ABI release APKs
+	cd app/xpadlink_app && flutter build apk --release --split-per-abi --obfuscate --split-debug-info=build/debug-info
 
 app-clean: ## Remove the generated Flutter project
 	rm -rf app/xpadlink_app

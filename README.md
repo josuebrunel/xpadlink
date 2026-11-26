@@ -25,6 +25,7 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
   - [Vibration](#vibration)
   - [Motion (gyro) in Cemu](#motion-gyro-in-cemu)
 - [Calibration](#calibration)
+- [Customizable touch controls](#customizable-touch-controls)
 - [Run in the background](#run-in-the-background)
 - [Troubleshooting](#troubleshooting)
 - [Reference](#reference)
@@ -37,14 +38,18 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 ## Features
 
 - A virtual Xbox 360 pad (`045e:028e`), so SDL, Steam, Proton, Cemu and browsers work without mapping.
-- Touch controls on the phone, or a real controller plugged into it.
+- Customizable touch controls on the phone (reposition, scale, toggle visibility, adjust opacity, haptics, and presets), or a real controller plugged into it.
+- Physical **Volume Up / Volume Down** key triggers (map to RT/LT, bumpers, face buttons, etc. with Hold or Toggle mode and Flip-180 auto-swap) and **Touch-Look** empty-screen swipe camera steering (`RX`/`RY`).
+- Clean, unobstructed full-screen touch gameplay with a customizable floating menu button and Android Back button popup menu.
+- Advanced Motion & Gyroscope tuning (~100 Hz): pure hardware gyro with accelerometer fallback toggle, zero-point drift calibration, and axis inversion (Pitch, Yaw, Roll) for Breath of the Wild apparatus shrines.
+- Motion settings accessible both from the main menu and during gameplay.
 - Over Wi-Fi, or over Bluetooth when there is no shared network.
 - The app finds your PC on Wi-Fi by itself. No typing an IP.
 - Up to 4 phones at once, one virtual pad each.
 - A token keeps other people on your network from sending input.
 - Vibration: a game's rumble buzzes the phone, or a controller with motors.
 - Calibration for analog triggers (Hall effect pads), stick center and deadzone, and the phone's gyro.
-- Motion for Cemu (experimental): the phone's tilt, for Wii U GamePad games.
+- Motion for Cemu: the phone's tilt, for Wii U GamePad games and shrines.
 - Runs as a background service on Linux, macOS and Windows.
 
 ## Screenshots
@@ -52,25 +57,35 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 <table>
   <tr>
     <td><img src="docs/images/app-connect-tabs.png" alt="Connect screen with Saved, Wi-Fi and Bluetooth tabs"></td>
-    <td><img src="docs/images/app-controller-pad.png" alt="Touch controller with the Back button, player ring and link chip"></td>
+    <td><img src="docs/images/app-controller-pad.png" alt="Clean touch controls in active gameplay"></td>
   </tr>
   <tr>
-    <td align="center">Pick a saved server, find your PC on Wi-Fi, or choose a paired one over Bluetooth</td>
-    <td align="center">Touch controls, with the link and ping on top. Back leaves the view</td>
+    <td align="center">Main connect screen with Wi-Fi discovery, Bluetooth pairing, and quick Gyro & Controls tuning</td>
+    <td align="center">Unobstructed touch controls in active gameplay (top bar hidden)</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/app-game-menu.png" alt="In-game popup menu"></td>
+    <td><img src="docs/images/app-motion-tuning.png" alt="Motion & Gyroscope Tuning"></td>
+  </tr>
+  <tr>
+    <td align="center">In-game quick menu (opened via floating MENU button or Android Back button)</td>
+    <td align="center">Motion & Gyro tuning: sensor fallback, BotW apparatus axis inversion, and drift calibration</td>
+  </tr>
+  <tr>
+    <td><img src="docs/images/app-layout-editor.png" alt="Touch Layout Editor"></td>
+    <td><img src="docs/images/app-layout-presets.png" alt="Layout Presets"></td>
+  </tr>
+  <tr>
+    <td align="center">Touch layout editor: drag-and-drop repositioning, per-control scaling, and visibility toggling</td>
+    <td align="center">Scrollable layout presets (Xbox, PlayStation, Southpaw, Claw, Retro 2D)</td>
   </tr>
   <tr>
     <td><img src="docs/images/app-controller-hidden.png" alt="Hidden controls view with the logo and live stick values"></td>
-    <td><img src="docs/images/hardwaretester.png" alt="Browser gamepad tester showing XPadLink"></td>
+    <td><img src="docs/images/cemu-input.png" alt="Cemu input settings with the pad mapped"></td>
   </tr>
   <tr>
-    <td align="center">The eye hides the touch controls (they hide by themselves when a real pad is used)</td>
-    <td align="center">The PC sees a standard gamepad</td>
-  </tr>
-  <tr>
-    <td colspan="2"><img src="docs/images/cemu-input.png" alt="Cemu input settings with the pad mapped"></td>
-  </tr>
-  <tr>
-    <td colspan="2" align="center">Cemu maps it with Auto-assign, no manual setup</td>
+    <td align="center">Hidden controls readout view (auto-hides when a physical pad is connected)</td>
+    <td align="center">Cemu maps the virtual controller and DSU motion server automatically</td>
   </tr>
 </table>
 
@@ -122,7 +137,7 @@ make app-run          # builds and runs on the connected phone
 Check it on the PC: `evtest` (pick `XPadLink - Xbox Controller 1`) or open
 <https://hardwaretester.com/gamepad>.
 
-In the app's top bar: the eye hides the touch controls, the rotation icon turns motion on or off, the tune icon opens [calibration](#calibration), and the flip icon turns the screen upside down if it ended up the wrong way.
+During active gameplay, the screen is clean and unobstructed with no permanent top bar. Tap the floating **`[ ≡ MENU ]`** button or press the Android **Back** button to open the in-game menu: resume play, edit touch controls, hide controls (switch to readout view), flip the screen 180°, toggle motion streaming, or open **Motion & Gyro Settings** and **Hardware Calibration**.
 
 ## Bluetooth
 
@@ -144,20 +159,23 @@ Check it without a game: connect the phone, then run `go run ./cmd/xpadrumble` i
 
 ### Motion (gyro) in Cemu
 
-**Experimental.** Some Wii U games need the GamePad's motion sensors, like the maze shrines in Breath of the Wild.
-The app sends the phone's gyro and accelerometer, and `xpadlinkd` serves them to Cemu as a DSU (Cemuhook) server on `127.0.0.1:26760`.
+The app streams the phone's gyroscope and accelerometer at ~100 Hz, and `xpadlinkd` serves them to Cemu as a DSU (Cemuhook) server on `127.0.0.1:26760`.
 
 1. In Cemu, open **Options, Input settings** and set the emulated controller to **Wii U GamePad**.
 2. Add a controller with the API **DSUController**, server `127.0.0.1`, port `26760`, and the controller index matching your player number minus one.
 3. Hold the phone landscape, like a GamePad, and press **Calibrate** in Cemu.
 
-No gyroscope on the phone? Many budget phones have none. The app then derives the turn rate from the rotation vector (accelerometer plus magnetometer). It's noisier and drifts near magnets.
-On such a phone the BOTW maze shrine is not working yet (see [Known gaps](#known-gaps)).
-Use `-dsu ""` to turn the motion server off.
+**Motion & Gyroscope Tuning**:
+- **Hardware Gyro vs. Fallback**: Phones with a physical gyroscope use pure low-latency hardware data (~100 Hz), avoiding synthetic rotation-vector lag and jitter. If your phone lacks a physical gyroscope, enable the **Accelerometer / Rotation Fallback** toggle.
+- **Breath of the Wild Apparatus Shrines**: If shrine mazes (like Myahm Agana) flip upside down or rotate backwards in Cemu, use the **Invert Pitch**, **Invert Yaw**, or **Invert Roll** switches, and fine-tune responsiveness with the **Gyro Sensitivity** slider (0.5x to 3.0x).
+- **Zero-Point Drift Calibration**: Lay the phone flat and still, then press **Measure Zero Point (2s)** to eliminate stationary cursor drift.
+- **Accessing Motion Settings**: Tap the **`[GYRO]`** button in the main menu header or connection form, or open **Motion & Gyro Settings** from the in-game popup menu.
+
+Use `-dsu ""` on `xpadlinkd` to turn the motion server off.
 
 ## Calibration
 
-Open it with the tune icon in the controller screen's top bar. It has three tabs, and each one has its own **Save** and **Reset**.
+Open it via **Hardware Calibration** in the in-game menu. It has three tabs, and each one has its own **Save** and **Reset**.
 Values are stored on the phone, per controller name, and applied in the app before anything is sent. The server and the wire format don't change.
 
 - **Triggers.** Pull both triggers all the way, then let go. The app learns the lowest and highest value your pad reports and rescales that range to 0..255. This matters for Hall effect triggers, which rarely reach 100%, and for racing games that use them as throttle and brake. **Start over** clears the readings if you pulled badly.
@@ -167,6 +185,31 @@ Values are stored on the phone, per controller name, and applied in the app befo
 Triggers and sticks need a physical controller that has sent some input. Press a button first. The touch controls are not calibrated.
 
 A pad that reports an analog trigger axis is read as analog. The L2/R2 key is only used as an on/off fallback for pads with no analog trigger axis.
+
+## Customizable touch controls
+
+The mobile app includes an interactive on-screen touch control customization system:
+- **Reposition any control individually**: Drag sticks, individual D-pad arrows, individual face buttons (`A`, `B`, `X`, `Y`), bumpers, triggers, `View`/`Guide`/`Menu`, `L3`/`R3`, and the floating menu button anywhere on screen.
+- **Per-button scaling & visibility**: Resize any individual button or stick between 50% and 200% (in 5% steps) and hide unused buttons independently.
+- **SOLO / GROUP editor toggle**: Customize one button at a time by default (**SOLO**), or switch to **GROUP** to move, resize, hide, or reset an entire cluster (`ABXY`, `D-Pad`, or `Center`) together.
+- **Transparency**: Adjust global button opacity from subtle (10%) to solid (100%).
+- **Haptic feedback**: Optional vibration feedback on button touches.
+- **Floating Menu Button**: A customizable floating `[ ≡ MENU ]` button opens the quick in-game menu during gameplay.
+- **Scrollable Layout Presets**:
+  - **Default (Xbox)**: Standard asymmetrical layout.
+  - **PlayStation Symmetrical**: Sticks at the bottom, D-pad and face buttons on top.
+  - **Southpaw (Inverted)**: Swapped sticks and action buttons for left-handed players.
+  - **4-Finger Claw**: Stacked top triggers and bumpers for multi-finger competitive claw grip.
+  - **Retro / 2D Arcade**: Enlarged D-pad and buttons with analog sticks hidden.
+- **Persistent storage**: Layouts are automatically saved to your device and restored across app restarts.
+- **Accessing the editor**: Tap **CONTROLS** in the main menu header, or choose **Edit Controls** from the in-game popup menu.
+
+### Volume Key Triggers & Touch-Look Camera
+
+Open **INPUT** in the main menu header (or **VOLUME TRIGGERS** / **TOUCH-LOOK TUNING** inside the in-game menu) to configure:
+
+- **Physical Volume Key Triggers**: Map the phone's **Volume Up** and **Volume Down** buttons to any Xbox 360 control (such as `RT`/`LT` triggers, `RB`/`LB`, `ABXY`, `L3`/`R3`, or D-Pad) with per-key **Hold** or **Toggle** mode, optional **Auto-Swap on Flip Screen (180°)**, and haptic feedback. Volume keys work normally for Android audio outside active gameplay or when set to **System Volume (Off)**.
+- **Touch-Look Camera**: Drag empty screen space to steer the virtual Right Stick (`RX`/`RY`) without touching the stick circle. Choose between **Swipe Relatif (Trackpad)** (camera moves while your finger slides and stops when still, with configurable deadzone boost) and **Floating Stick** (virtual origin under your thumb), set active area (**Right Half** or **Full Screen**), sensitivity (`0.3x`–`3.0x`), axis inversion, and auto-hiding the on-screen Right Stick.
 
 ## Run in the background
 
@@ -199,9 +242,9 @@ The token is saved once and reused, so the phone never needs a new one.
 | Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
 | Triggers act like on/off buttons | Open Calibration, pull each trigger fully on the **Triggers** tab and save. If it still jumps to full, open an issue with the controller model and the app log |
 | Stick drifts or never reaches full | Calibrate it on the **Sticks** tab, or raise the deadzone |
-| Screen is upside down | Press the flip icon in the app's bottom bar |
-| Cemu shows no motion | `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the daemon log should say `dsu: client subscribed` once the DSUController is added. `motion unavailable` in the app log means the phone has no gyroscope and no rotation vector sensor. Check the rotation icon is on |
-| Motion is wrong in a game | Press **Calibrate** in Cemu with the phone held steady. In the app, measure the gyro on the **Motion** tab, and try **Flip roll** if left and right are swapped. Open an issue with the game and what happens |
+| Screen is upside down | Open the in-game menu (floating MENU button or Android Back button) and tap **Flip Screen** |
+| Cemu shows no motion | `ss -ulnp \| grep 26760` should list `xpadlinkd`, and the daemon log should say `dsu: client subscribed` once the DSUController is added. Check that Motion Streaming is on in the in-game menu |
+| Motion is wrong or inverted in a game | Open **Motion & Gyro Settings** (from the main menu or in-game menu). Toggle **Invert Pitch**, **Invert Yaw**, or **Invert Roll** to fix upside-down apparatus shrines in BotW, measure the gyro zero point, and adjust sensitivity |
 | Bluetooth connect fails | Pair first. Then `bluetoothctl trust <phone-address>`. `xpadlinkd` must log `bluetooth listening`; if it says `bluetooth disabled`, `bluetoothd` is not running |
 | Input lags or drops | Watch the app log: `adb logcat -v time xpadlink:V flutter:V '*:S'`. A `link:` line every 5 s shows acks and send failures |
 
@@ -227,7 +270,7 @@ Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token
 ### Known gaps
 
 - Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
-- Motion is experimental. It reaches Cemu, but in the BOTW maze shrine the maze still flips upside down (tested on a phone without a gyroscope, #32). It is only wired to Cemu (DSU).
+- Motion is wired to Cemu (DSU). Any apparatus shrine orientation issues in BOTW can be corrected using the axis inversion switches (Pitch, Yaw, Roll), sensitivity multiplier, and sensor fallback toggle in Motion & Gyro Settings.
 - Wi-Fi is LAN only with no encryption: the token only stops other people on the network from injecting input. Bluetooth needs pairing, and the link is encrypted by Bluetooth itself.
 - Bluetooth is Linux only, and untested with more than one phone at once.
 - Calibration covers physical controllers only, and it has no screenshots in this README yet.
