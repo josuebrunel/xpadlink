@@ -14,6 +14,7 @@ import 'layout.dart';
 import 'layout_editor.dart';
 import 'link.dart';
 import 'log.dart';
+import 'native_streams.dart';
 import 'onscreen.dart';
 import 'protocol.dart';
 import 'servers.dart';
@@ -780,8 +781,6 @@ class ControllerScreen extends StatefulWidget {
 
 class _ControllerScreenState extends State<ControllerScreen>
     with WidgetsBindingObserver {
-  static const _channel = EventChannel('xpadlink/gamepad');
-  static const _motionChannel = EventChannel('xpadlink/motion');
   static const _motionConfig = MethodChannel('xpadlink/motion_config');
   static const _rumbleChannel = MethodChannel('xpadlink/rumble');
   static const _volumeChannel = EventChannel('xpadlink/volume_keys');
@@ -812,13 +811,17 @@ class _ControllerScreenState extends State<ControllerScreen>
   String? _error;
   Timer? _readout; // refreshes the stick values while the touch controls are hidden
 
+  void _onClientChanged() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     SystemChrome.setPreferredOrientations(_landscape);
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
-    _client.addListener(() => setState(() {}));
+    _client.addListener(_onClientChanged);
     _client.onRumble = _onRumble;
     _client
         .start(widget.host, widget.port, widget.token, widget.name)
@@ -826,7 +829,7 @@ class _ControllerScreenState extends State<ControllerScreen>
       _log.e('client start failed', e);
       if (mounted) setState(() => _error = '$e');
     });
-    _padSub = _channel.receiveBroadcastStream().listen(_onPhysical,
+    _padSub = NativeStreams.gamepad.listen(_onPhysical,
         onError: (Object e) => _log.e('gamepad channel error', e));
     _volumeSub = _volumeChannel.receiveBroadcastStream().listen(_onVolumeKey,
         onError: (Object e) => _log.e('volume channel error', e));
@@ -935,7 +938,7 @@ class _ControllerScreenState extends State<ControllerScreen>
       _client.motion = null;
       return;
     }
-    _motionSub = _motionChannel.receiveBroadcastStream().listen((dynamic e) {
+    _motionSub = NativeStreams.motion.listen((dynamic e) {
       final v = (e as List).cast<double>();
       _client.setMotion(_motionCal.apply(PadMotion(v.sublist(0, 3), v.sublist(3, 6))));
     }, onError: (Object e) => _log.e('motion channel error', e));
@@ -998,6 +1001,7 @@ class _ControllerScreenState extends State<ControllerScreen>
       {'interceptUp': false, 'interceptDown': false},
     ).catchError((Object _) {});
     _client.onRumble = null;
+    _client.removeListener(_onClientChanged);
     _rumbleChannel.invokeMethod<void>('vibrate', {'strong': 0, 'weak': 0, 'ms': 0});
     _client.dispose();
     SystemChrome.setPreferredOrientations(_landscape);
@@ -1808,9 +1812,9 @@ Future<void> showMotionSettingsSheet({
 }) async {
   final calStore = CalibrationStore();
   const motionConfig = MethodChannel('xpadlink/motion_config');
-  const motionChannel = EventChannel('xpadlink/motion');
   var cal = initialCal ?? await calStore.loadMotion();
   var isMotionActive = motionOn;
+  var measuring = false;
 
   if (!context.mounted) return;
 
@@ -2023,9 +2027,9 @@ Future<void> showMotionSettingsSheet({
                                     divisions: 25,
                                     onChanged: (v) {
                                       setDialogState(() => cal.sensitivity = (v * 10).round() / 10);
-                                      calStore.saveMotion(cal);
                                       onCalChanged?.call(cal);
                                     },
+                                    onChangeEnd: (_) => calStore.saveMotion(cal),
                                   ),
                                 ),
                               ],
@@ -2062,46 +2066,60 @@ Future<void> showMotionSettingsSheet({
                                 const SizedBox(height: 8),
                                 ElevatedButton.icon(
                                   icon: const Icon(Icons.track_changes, size: 18),
-                                  label: const Text('MEASURE ZERO POINT (2s)'),
+                                  label: Text(measuring ? 'MEASURING...' : 'MEASURE ZERO POINT (2s)'),
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: C.panel,
                                     foregroundColor: C.cyan,
                                     side: const BorderSide(color: C.line),
                                   ),
-                                  onPressed: () async {
-                                    final subs = motionChannel.receiveBroadcastStream().listen(null);
-                                    final samples = <List<double>>[];
-                                    subs.onData((dynamic data) {
-                                      final list = (data as List).cast<double>();
-                                      if (list.length >= 6) {
-                                        samples.add(list.sublist(3, 6));
-                                      }
-                                    });
-                                    ScaffoldMessenger.of(context).showSnackBar(
-                                      const SnackBar(content: Text('Measuring gyro bias... keep phone still!')),
-                                    );
-                                    await Future<void>.delayed(const Duration(milliseconds: 2000));
-                                    await subs.cancel();
-                                    if (samples.isNotEmpty) {
-                                      final avg = [0.0, 0.0, 0.0];
-                                      for (final s in samples) {
-                                        avg[0] += s[0];
-                                        avg[1] += s[1];
-                                        avg[2] += s[2];
-                                      }
-                                      avg[0] /= samples.length;
-                                      avg[1] /= samples.length;
-                                      avg[2] /= samples.length;
-                                      setDialogState(() => cal.gyroBias = avg);
-                                      await calStore.saveMotion(cal);
-                                      onCalChanged?.call(cal);
-                                      if (context.mounted) {
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          const SnackBar(content: Text('Gyro zero point calibrated!')),
-                                        );
-                                      }
-                                    }
-                                  },
+                                  onPressed: measuring
+                                      ? null
+                                      : () async {
+                                          setDialogState(() => measuring = true);
+                                          final samples = <List<double>>[];
+                                          final subs = NativeStreams.motion.listen((dynamic data) {
+                                            final list = (data as List).cast<double>();
+                                            if (list.length >= 6) {
+                                              samples.add(list.sublist(3, 6));
+                                            }
+                                          });
+                                          try {
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('Measuring gyro bias... keep phone still!')),
+                                              );
+                                            }
+                                            await Future<void>.delayed(const Duration(milliseconds: 2000));
+                                          } finally {
+                                            await subs.cancel();
+                                            if (ctx.mounted) {
+                                              setDialogState(() => measuring = false);
+                                            }
+                                          }
+                                          if (samples.isNotEmpty) {
+                                            final avg = [0.0, 0.0, 0.0];
+                                            for (final s in samples) {
+                                              avg[0] += s[0];
+                                              avg[1] += s[1];
+                                              avg[2] += s[2];
+                                            }
+                                            avg[0] /= samples.length;
+                                            avg[1] /= samples.length;
+                                            avg[2] /= samples.length;
+                                            if (ctx.mounted) {
+                                              setDialogState(() => cal.gyroBias = avg);
+                                            } else {
+                                              cal.gyroBias = avg;
+                                            }
+                                            await calStore.saveMotion(cal);
+                                            onCalChanged?.call(cal);
+                                            if (context.mounted) {
+                                              ScaffoldMessenger.of(context).showSnackBar(
+                                                const SnackBar(content: Text('Gyro zero point calibrated!')),
+                                              );
+                                            }
+                                          }
+                                        },
                                 ),
                               ],
                             ),

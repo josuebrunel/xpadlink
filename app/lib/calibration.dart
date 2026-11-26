@@ -3,10 +3,10 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'log.dart';
+import 'native_streams.dart';
 import 'protocol.dart';
 import 'theme.dart';
 
@@ -207,13 +207,12 @@ class CalibrationScreen extends StatefulWidget {
 
 class _CalibrationScreenState extends State<CalibrationScreen> {
   static final _log = Log('calibration');
-  static const _padChannel = EventChannel('xpadlink/gamepad');
-  static const _motionChannel = EventChannel('xpadlink/motion');
 
   final _store = CalibrationStore();
   StreamSubscription<dynamic>? _padSub;
   StreamSubscription<dynamic>? _motionSub;
   Timer? _tick;
+  Timer? _flashTimer;
 
   int _tab = 0;
   String? _padName;
@@ -252,9 +251,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
     _store.loadMotion().then((c) {
       if (mounted) setState(() => _motion = c);
     });
-    _padSub = _padChannel.receiveBroadcastStream().listen(_onPad,
+    _padSub = NativeStreams.gamepad.listen(_onPad,
         onError: (Object e) => _log.e('gamepad channel error', e));
-    _motionSub = _motionChannel.receiveBroadcastStream().listen(_onMotion,
+    _motionSub = NativeStreams.motion.listen(_onMotion,
         onError: (Object e) => _log.e('motion channel error', e));
     _tick = Timer.periodic(const Duration(milliseconds: 60), (_) {
       if (mounted) setState(() {});
@@ -264,6 +263,7 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   @override
   void dispose() {
     _tick?.cancel();
+    _flashTimer?.cancel();
     _padSub?.cancel();
     _motionSub?.cancel();
     super.dispose();
@@ -309,8 +309,9 @@ class _CalibrationScreenState extends State<CalibrationScreen> {
   }
 
   void _flash(String msg) {
+    _flashTimer?.cancel();
     setState(() => _saved = msg);
-    Timer(const Duration(seconds: 2), () {
+    _flashTimer = Timer(const Duration(seconds: 2), () {
       if (mounted) setState(() => _saved = '');
     });
   }
