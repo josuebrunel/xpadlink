@@ -600,7 +600,7 @@ class OnScreenPad extends StatelessWidget {
           );
 
       // Helper to position an element given its relative center coordinates and dimensions
-      Widget buildPositioned({
+      Widget? buildPositioned({
         required String id,
         required double elemW,
         required double elemH,
@@ -608,7 +608,7 @@ class OnScreenPad extends StatelessWidget {
       }) {
         final elem = cfg.getElement(id);
         if (!elem.visible && !editMode) {
-          return const SizedBox.shrink();
+          return null;
         }
 
         // Relative coordinates refer to the element's center
@@ -756,8 +756,8 @@ class OnScreenPad extends StatelessWidget {
       // 6. Right Stick
       final rsElem = cfg.getElement(ControlId.rightStick);
       final rsSize = baseStick * rsElem.scale;
-      final rsWidget = hideRightStick
-          ? const SizedBox.shrink()
+      final Widget? rsWidget = hideRightStick
+          ? null
           : buildPositioned(
               id: ControlId.rightStick,
               elemW: rsSize,
@@ -809,7 +809,7 @@ class OnScreenPad extends StatelessWidget {
             haptics: cfg.hapticsEnabled),
       );
 
-      Widget dpadButton(
+      Widget? dpadButton(
         String id,
         String label,
         int bit,
@@ -832,7 +832,7 @@ class OnScreenPad extends StatelessWidget {
         );
       }
 
-      Widget faceButton(
+      Widget? faceButton(
         String id,
         String label,
         int bit,
@@ -971,48 +971,59 @@ class OnScreenPad extends StatelessWidget {
         ),
       );
 
-      final controlsStack = Stack(children: [
-        ltWidget,
-        lbWidget,
-        rtWidget,
-        rbWidget,
-        viewWidget,
-        guideWidget,
-        startWidget,
-        lsWidget,
-        l3Widget,
-        dpadUpWidget,
-        dpadDownWidget,
-        dpadLeftWidget,
-        dpadRightWidget,
-        btnYWidget,
-        btnAWidget,
-        btnXWidget,
-        btnBWidget,
-        rsWidget,
-        r3Widget,
-        menuWidget,
-      ]);
+      final controlsStack = Stack(
+        fit: StackFit.expand,
+        children: [
+          for (final child in <Widget?>[
+            ltWidget,
+            lbWidget,
+            rtWidget,
+            rbWidget,
+            viewWidget,
+            guideWidget,
+            startWidget,
+            lsWidget,
+            l3Widget,
+            dpadUpWidget,
+            dpadDownWidget,
+            dpadLeftWidget,
+            dpadRightWidget,
+            btnYWidget,
+            btnAWidget,
+            btnXWidget,
+            btnBWidget,
+            rsWidget,
+            r3Widget,
+            menuWidget,
+          ])
+            if (child != null) child,
+        ],
+      );
 
       if (editMode) {
         return controlsStack;
       }
 
-      return Stack(children: [
-        if (tlActive)
+      return Stack(
+        fit: StackFit.expand,
+        children: [
+          if (tlActive)
+            Positioned.fill(
+              child: TouchLookLayer(
+                width: w,
+                height: h,
+                config: tl!,
+                onChanged: _setTouchLook,
+              ),
+            ),
           Positioned.fill(
-            child: TouchLookLayer(
-              width: w,
-              height: h,
-              config: tl!,
-              onChanged: _setTouchLook,
+            child: Opacity(
+              opacity: cfg.opacity.clamp(0.1, 1.0),
+              child: controlsStack,
             ),
           ),
-        Opacity(
-          opacity: cfg.opacity.clamp(0.1, 1.0),
-          child: controlsStack,
-        ),
-      ]);
+        ],
+      );
     });
   }
 }
